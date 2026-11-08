@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Courier",
+    "description": "A persistent floating input bar at the bottom of every Harness Web view: send one message to the current session, then see Queued. Send-only — replies and approvals still require the conversation view."
+  }
+}

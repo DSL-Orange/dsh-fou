@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>挂板</title>
+<style>
+  :root { --fg:#1f2328; --dim:#6b7280; --line:#e5e7eb; --bg:#f7f8fa; }
+  * { box-sizing:border-box; }
+  html,body { height:100%; margin:0; }
+  body { font:13px/1.55 "Segoe UI","Microsoft YaHei",system-ui,sans-serif; color:var(--fg); background:var(--bg); display:flex; flex-direction:column; overflow:hidden; }
+  /* 2026-11-08（用户）：去掉左栏 —— 改成一排横放的 chips。左栏是"列表"，横排是"当前有哪些件"。 */
+  aside { flex:none; border-bottom:1px solid var(--line); background:#fff; display:flex; align-items:center; gap:6px; padding:0 8px; overflow-x:auto; overflow-y:hidden; }
+  aside .head { flex:none; display:flex; align-items:center; gap:4px; padding:5px 2px; }
+  aside .head span { font-weight:600; font-size:12px; white-space:nowrap; }
+  .head button { border:1px solid var(--line); background:#fff; border-radius:6px; font:inherit; font-size:11px; padding:2px 7px; cursor:pointer; color:var(--dim); }
+  .head button:hover { background:#f3f4f6; color:var(--fg); }
+  aside #toggle { display:none; }
+  ul { list-style:none; margin:0; padding:4px 2px; display:flex; align-items:center; gap:4px; flex:none; }
+  li { flex:none; padding:4px 10px; border:1px solid var(--line); border-radius:20px; cursor:pointer; white-space:nowrap; max-width:260px; overflow:hidden; text-overflow:ellipsis; font-size:12px; line-height:1.5; }
+  li:hover { background:#f3f4f6; }
+  li.on { background:#e8effd; border-color:#b9cdfa; }
+  li .t { display:inline; }
+  li .m { display:none; }
+  main { flex:1; min-width:0; display:flex; flex-direction:column; }
+  .top { padding:8px 12px; border-bottom:1px solid var(--line); background:#fff; display:flex; align-items:center; gap:8px; font-size:12px; }
+  .top .grow { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--dim); }
+  .top a { color:#2563eb; text-decoration:none; font-size:12px; }
+  .body { flex:1; min-height:0; display:flex; }
+  iframe { flex:1; border:0; background:#fff; }
+  pre { flex:1; margin:0; padding:14px 16px; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; font:12.5px/1.6 ui-monospace,Consolas,"Cascadia Mono",monospace; background:#fff; }
+  .empty { margin:auto; color:var(--dim); text-align:center; padding:24px; line-height:1.9; }
+  .empty code { background:#eef1f5; padding:1px 5px; border-radius:4px; }
+  .err { color:#b91c1c; padding:14px 16px; }
+</style>
+</head>
+<body>
+<aside>
+  <div class="head"><span>挂板</span><button id="refresh" title="重新读取">刷新</button><button id="toggle" title="收起/展开左栏">◀</button></div>
+  <ul id="list"></ul>
+</aside>
+<main>
+  <div class="top">
+    <span class="grow" id="title">—</span>
+    <a id="raw" href="#" target="_blank" style="display:none">原始</a>
+  </div>
+  <div class="body" id="body">
+    <div class="empty" id="empty">
+      挂板是空的。<br />
+      把东西挂上来即可 —— <code>html</code> / <code>md</code> / <code>json</code> / <code>纯文本</code> 都行。<br />
+      <span style="font-size:11px">（宿主接口：<code>POST /dsh-fou/hang</code>）</span>
+    </div>
+  </div>
+</main>
+<script>
+const LIST_ROUTE = '/dsh-fou/panels';
+const ONE_ROUTE = '/dsh-fou/panel';
+const HEADER = 'x-dsh-fou';
+
+let panels = [];
+let current = null;
+
+const elList = document.getElementById('list');
+const elBody = document.getElementById('body');
+const elTitle = document.getElementById('title');
+const elRaw = document.getElementById('raw');
+
+// 浮游打开挂板时会带上"它正在对话的会话"。挂板里的**活页面**（如验收表）
+// 提交后需要通知对象 —— 这里把参数转交给它们，而不是让它们自己去猜。
+const QUERY = new URLSearchParams(location.search);
+const NOTIFY = { id: QUERY.get('notify') || '', name: QUERY.get('notifyName') || '' };
+
+function withNotify(url) {
+  if (!NOTIFY.id) return url;
+  if (url.indexOf('/dsh-fou/') !== 0) return url; // 只转交给同源自家页面
+  const join = url.indexOf('?') >= 0 ? '&' : '?';
+  return (
+    url +
+    join +
+    'notify=' +
+    encodeURIComponent(NOTIFY.id) +
+    (NOTIFY.name ? '&notifyName=' + encodeURIComponent(NOTIFY.name) : '')
+  );
+}
+
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+}
+
+function kindLabel(kind) {
+  return { html: 'html', md: 'markdown', json: 'json', text: '文本', url: '链接' }[kind] || kind || '文本';
+}
+
+function renderList() {
+  elList.innerHTML = '';
+  if (panels.length === 0) {
+    const li = document.createElement('li');
+    li.style.color = 'var(--dim)';
+    li.style.cursor = 'default';
+    li.textContent = '（空）';
+    elList.appendChild(li);
+    return;
+  }
+  for (const p of panels) {
+    const li = document.createElement('li');
+    if (current && current.id === p.id) li.className = 'on';
+    li.innerHTML = '<span class="t">' + esc(p.title) + '</span><span class="m">' + esc(kindLabel(p.kind)) + ' · ' + esc(p.hungAt || '') + '</span>';
+    li.addEventListener('click', () => openPanel(p.id));
+    elList.appendChild(li);
+  }
+}
+
+function clearBody() {
+  elBody.innerHTML = '';
+}
+
+function showEmpty(html) {
+  clearBody();
+  const div = document.createElement('div');
+  div.className = 'empty';
+  div.innerHTML = html;
+  elBody.appendChild(div);
+}
+
+async function loadList() {
+  try {
+    const res = await fetch(LIST_ROUTE, { headers: { [HEADER]: '1' } });
+    const data = await res.json();
+    panels = Array.isArray(data.panels) ? data.panels : [];
+    renderList();
+  } catch (error) {
+    panels = [];
+    showEmpty('<span class="err">读不到挂板：' + esc(error.message) + '</span>');
+  }
+}
+
+async function openPanel(id) {
+  // 记住上次看的是哪一个：下次打开落到同一件，而不是永远第一条
+  try { localStorage.setItem('fou.board.lastpanel.v1', id); } catch {}
+  let data;
+  try {
+    const res = await fetch(ONE_ROUTE + '?id=' + encodeURIComponent(id), { headers: { [HEADER]: '1' } });
+    data = await res.json();
+    if (!res.ok) throw new Error(data.error || ('HTTP ' + res.status));
+  } catch (error) {
+    clearBody();
+    const div = document.createElement('div');
+    div.className = 'err';
+    div.textContent = '打不开：' + error.message;
+    elBody.appendChild(div);
+    return;
+  }
+  const meta = data.meta || {};
+  current = meta;
+  renderList();
+  elTitle.textContent = meta.title || meta.id;
+  elTitle.title = (meta.from ? '来自 ' + meta.from + ' · ' : '') + (meta.bytes || 0) + ' B';
+  elRaw.style.display = '';
+
+  // `url` 挂件：直接装那个地址（不复制内容，永远最新）
+  if (meta.kind === 'url') {
+    const target = withNotify(meta.url);
+    elRaw.href = target;
+    clearBody();
+    const frame = document.createElement('iframe');
+    frame.src = target;
+    frame.title = meta.title || meta.id;
+    elBody.appendChild(frame);
+    return;
+  }
+
+  elRaw.href = ONE_ROUTE + '?id=' + encodeURIComponent(meta.id) + '&raw=1';
+  clearBody();
+
+  if (meta.kind === 'html') {
+    const frame = document.createElement('iframe');
+    frame.src = elRaw.href;
+    frame.title = meta.title || meta.id;
+    elBody.appendChild(frame);
+    return;
+  }
+  const pre = document.createElement('pre');
+  if (meta.kind === 'json') {
+    try { pre.textContent = JSON.stringify(JSON.parse(data.content), null, 2); }
+    catch { pre.textContent = data.content; }
+  } else {
+    pre.textContent = data.content;
+  }
+  elBody.appendChild(pre);
+}
+
+document.getElementById('refresh').addEventListener('click', async () => {
+  await loadList();
+  if (current && panels.some((p) => p.id === current.id)) openPanel(current.id);
+  else if (panels.length > 0) openPanel(panels[0].id);
+});
+
+// 左栏可收：状态记在本浏览器，下次打开还是你上次的样子。
+const TOGGLE_KEY = 'fou.board.collapsed';
+const elToggle = document.getElementById('toggle');
+function paintCollapsed(collapsed) {
+  document.body.classList.toggle('collapsed', collapsed);
+  elToggle.title = collapsed ? '展开左栏' : '收起左栏';
+}
+paintCollapsed(localStorage.getItem(TOGGLE_KEY) === '1');
+elToggle.addEventListener('click', () => {
+  const next = !document.body.classList.contains('collapsed');
+  paintCollapsed(next);
+  try {
+    localStorage.setItem(TOGGLE_KEY, next ? '1' : '0');
+  } catch (error) {
+    /* 存不了也不影响当下这次 */
+  }
+});
+
+(async () => {
+  await loadList();
+  if (panels.length === 0) return;
+  // 上次看的那件还在就落回去；不在了就退回第一条
+  let last = '';
+  try { last = localStorage.getItem('fou.board.lastpanel.v1') || ''; } catch {}
+  const pick = panels.some((p) => p.id === last) ? last : panels[0].id;
+  openPanel(pick);
+})();
+
+// 挂板是**透明转发层**：挂件（例如验收表）要把 postMessage 递给外层浮游，
+// 但它的 window.parent 是挂板这一层 —— 这里原样往上递一层，别把回路拦住。
+window.addEventListener('message', (event) => {
+  if (event.origin !== window.location.origin) return;
+  const data = event.data;
+  if (!data || typeof data.type !== 'string') return;
+  if (data.type.indexOf('fou:') !== 0) return;
+  if (window.parent && window.parent !== window) {
+    window.parent.postMessage(data, window.location.origin);
+  }
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>查看</title>
+<style>
+  :root { --fg:#1f2328; --dim:#6b7280; --line:#e5e7eb; --bg:#f7f8fa; }
+  * { box-sizing:border-box; }
+  html,body { height:100%; margin:0; }
+  body { font:13.5px/1.7 "Segoe UI","Microsoft YaHei",system-ui,sans-serif; color:var(--fg); background:var(--bg); display:flex; flex-direction:column; }
+  .bar { display:flex; align-items:center; gap:8px; padding:6px 12px; background:#fff; border-bottom:1px solid var(--line); font-size:12px; color:var(--dim); flex:none; }
+  .bar .name { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--fg); font-weight:600; }
+  .bar .kind { flex:none; color:var(--dim); font-size:11px; }   /* 纯文字，不做按钮外观（2026-11-08：假装能点的标签比没有更坏） */
+  .bar .foot { flex:none; }
+  .body { flex:1; overflow:auto; padding:16px 20px 40px; background:#fff; }
+  .body pre { margin:0; font:12.5px/1.7 ui-monospace,Consolas,monospace; white-space:pre-wrap; word-break:break-word; }
+  .body iframe { width:100%; height:calc(100vh - 80px); border:0; }
+  h1,h2,h3,h4 { line-height:1.35; margin:18px 0 8px; }
+  h1 { font-size:20px; } h2 { font-size:17px; } h3 { font-size:15px; } h4 { font-size:14px; }
+  p { margin:8px 0; }
+  ul { margin:8px 0; padding-left:22px; }
+  table { border-collapse:collapse; margin:10px 0; font-size:12.5px; }
+  th,td { border:1px solid var(--line); padding:5px 9px; text-align:left; }
+  th { background:#fafbfc; }
+  code { background:#eef1f5; padding:1px 4px; border-radius:4px; font-size:12px; }
+  pre.md-code { background:#f6f8fa; padding:10px 12px; border-radius:8px; overflow:auto; }
+  pre.md-code code { background:none; padding:0; }
+  blockquote { margin:8px 0; padding:2px 0 2px 12px; border-left:3px solid var(--line); color:#4b5563; }
+  hr { border:0; border-top:1px solid var(--line); margin:16px 0; }
+  .err { color:#b91c1c; }
+</style>
+</head>
+<body>
+<div class="bar">
+  <span class="name" id="name">载入中…</span>
+  <span class="kind" id="kind"></span>
+  <a class="foot" id="raw" href="#" target="_blank" rel="noopener">原文</a>
+</div>
+<div class="body" id="body"></div>
+<script>
+const Q = new URLSearchParams(location.search);
+const ID = Q.get('id') || '';
+const elName = document.getElementById('name');
+const elKind = document.getElementById('kind');
+const elBody = document.getElementById('body');
+const elRaw = document.getElementById('raw');
+
+function esc(s) {
+  return String(s).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+}
+
+function inline(s) {
+  let t = esc(s);
+  t = t.replace(/`([^`]+)`/g, '<code>$1</code>');
+  t = t.replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>');
+  t = t.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a class="lnk" href="$2" target="_blank" rel="noopener">$1</a>');
+  return t;
+}
+
+/** 够用就行：标题 / 列表 / 表格 / 代码块 / 引用 / 段落。不是完整 md。 */
+function renderMarkdown(src) {
+  const lines = String(src).replace(/\r\n/g, '\n').split('\n');
+  const out = [];
+  let i = 0;
+  let inCode = false;
+  let codeBuf = [];
+  while (i < lines.length) {
+    const line = lines[i];
+    if (/^```/.test(line)) {
+      if (inCode) {
+        out.push('<pre class="md-code"><code>' + esc(codeBuf.join('\n')) + '</code></pre>');
+        codeBuf = [];
+        inCode = false;
+      } else inCode = true;
+      i += 1;
+      continue;
+    }
+    if (inCode) { codeBuf.push(line); i += 1; continue; }
+
+    if (line.indexOf('|') >= 0 && i + 1 < lines.length && /^\s*\|?[\s:-]+\|/.test(lines[i + 1])) {
+      const cells = (s) => s.split('|').map((c) => c.trim()).filter((c, idx, arr) => !(c === '' && (idx === 0 || idx === arr.length - 1)));
+      const head = cells(line);
+      const rows = [];
+      i += 2;
+      while (i < lines.length && lines[i].indexOf('|') >= 0) { rows.push(cells(lines[i])); i += 1; }
+      out.push('<table><thead><tr>' + head.map((h) => '<th>' + inline(h) + '</th>').join('') + '</tr></thead><tbody>' +
+        rows.map((r) => '<tr>' + r.map((c) => '<td>' + inline(c) + '</td>').join('') + '</tr>').join('') + '</tbody></table>');
+      continue;
+    }
+
+    const h = /^(#{1,4})\s+(.*)$/.exec(line);
+    if (h) { out.push('<h' + h[1].length + '>' + inline(h[2]) + '</h' + h[1].length + '>'); i += 1; continue; }
+    if (/^>\s?/.test(line)) { out.push('<blockquote>' + inline(line.replace(/^>\s?/, '')) + '</blockquote>'); i += 1; continue; }
+    if (/^\s*[-*+]\s+/.test(line)) {
+      const items = [];
+      while (i < lines.length && /^\s*[-*+]\s+/.test(lines[i])) { items.push('<li>' + inline(lines[i].replace(/^\s*[-*+]\s+/, '')) + '</li>'); i += 1; }
+      out.push('<ul>' + items.join('') + '</ul>');
+      continue;
+    }
+    if (/^\s*---+\s*$/.test(line)) { out.push('<hr>'); i += 1; continue; }
+    if (line.trim() === '') { i += 1; continue; }
+    out.push('<p>' + inline(line) + '</p>');
+    i += 1;
+  }
+  if (inCode && codeBuf.length) out.push('<pre class="md-code"><code>' + esc(codeBuf.join('\n')) + '</code></pre>');
+  return out.join('\n');
+}
+
+// 在浮游浏览里再点一个链接：**换掉这一件**，不开新窗口（2026-11-08 用户点名要）。
+// 只拦 http(s) 外链；页面内锚点、相对路径一概不碰。
+document.addEventListener('click', (event) => {
+  const anchor = event.target && event.target.closest ? event.target.closest('a.lnk') : null;
+  if (!anchor) return;
+  const href = anchor.getAttribute('href') || '';
+  if (!/^https?:\/\//i.test(href)) return;
+  event.preventDefault();
+  try {
+    window.parent.postMessage({ type: 'fou:open-url', url: href, title: href }, window.location.origin);
+  } catch (error) {
+    window.open(href, '_blank', 'noopener');
+  }
+}, true);
+
+(async () => {
+  if (!ID) { elName.textContent = '缺少 id'; return; }  elRaw.href = '/dsh-fou/panel?id=' + encodeURIComponent(ID) + '&raw=1';
+  try {
+    const res = await fetch('/dsh-fou/panel?id=' + encodeURIComponent(ID), { headers: { 'x-dsh-fou': '1' } });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || ('HTTP ' + res.status));
+    const meta = data.meta || {};
+    const content = typeof data.content === 'string' ? data.content : '';
+    elName.textContent = meta.title || meta.id || ID;
+    elName.title = (meta.file || '') + (meta.bytes ? ' · ' + meta.bytes + ' B' : '');
+    elKind.textContent = meta.kind || 'text';
+
+    if (meta.kind === 'html') {
+      // 用 srcdoc 装 HTML：既渲染，又和控制台隔离
+      const frame = document.createElement('iframe');
+      frame.setAttribute('sandbox', 'allow-same-origin');
+      frame.srcdoc = content;
+      elBody.appendChild(frame);
+      return;
+    }
+    if (meta.kind === 'md') {
+      elBody.innerHTML = renderMarkdown(content);
+      return;
+    }
+    const pre = document.createElement('pre');
+    pre.textContent = content;
+    elBody.appendChild(pre);
+  } catch (error) {
+    elName.textContent = '打不开';
+    elBody.innerHTML = '<p class="err">' + esc(String((error && error.message) || error)) + '</p>';
+  }
+})();
+</script>
+</body>
+</html>

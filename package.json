@@ -1,0 +1,49 @@
+{
+  "name": "@local/dsh-courier",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "description": "A persistent floating input bar over every Harness Web view: send one message to the current session without leaving the plugins or market page. · 常驻悬浮输入条：任何页面都能给当前会话发一条消息，不用切回会话视图。v0.1 只送不收。",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./locale/*.json": "./locale/*.json"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "accept.html",
+    "panels.html",
+    "editor.html",
+    "view.html",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "README.md"
+  ],
+  "dependencies": {},
+  "peerDependencies": {
+    "@deepseek-ai/dsh-api-session-controller": "^0.1.5-rc.1 || ^0.2.0-rc.1",
+    "@deepseek-ai/dsh-client-locale": "^0.1.5-rc.1 || ^0.2.0-rc.1",
+    "@deepseek-ai/dsh-client-ui-context-menu": "^0.1.5-rc.1 || ^0.2.0-rc.1",
+    "@deepseek-ai/dsh-client-ui-conversation": "^0.1.5-rc.1 || ^0.2.0-rc.1",
+    "@deepseek-ai/dsh-client-ui-layout": "^0.1.5-rc.1 || ^0.2.0-rc.1"
+  },
+  "dsh": {
+    "engines": {
+      "dsh": ">=0.2.0-rc.1 <0.3.0"
+    },
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-conversation",
+        "@deepseek-ai/dsh-api-session-controller",
+        "@deepseek-ai/dsh-client-ui-layout",
+        "@deepseek-ai/dsh-client-ui-context-menu"
+      ]
+    }
+  }
+}

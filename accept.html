@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>浮游 · 验收表</title>
+<style>
+  :root { --fg:#1f2328; --dim:#6b7280; --line:#e5e7eb; --bg:#f7f8fa; --ok:#0d9458; --no:#d54941; }
+  * { box-sizing:border-box; }
+  body { margin:0; padding:16px 14px 92px; font:14px/1.6 "Segoe UI","Microsoft YaHei",system-ui,sans-serif; color:var(--fg); background:var(--bg); }
+  .wrap { max-width:1000px; margin:0 auto; }
+  .top { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:8px; }
+  h1 { font-size:17px; margin:0; }
+  select { padding:5px 8px; border:1px solid var(--line); border-radius:8px; background:#fff; font:inherit; font-size:12px; }
+  .note { color:var(--dim); font-size:12px; margin:0 0 12px; }
+  h2 { font-size:14px; margin:20px 0 8px; padding-bottom:5px; border-bottom:1px solid var(--line); }
+  table { width:100%; border-collapse:collapse; background:#fff; border-radius:10px; overflow:hidden; box-shadow:0 1px 2px #0000000d; }
+  th,td { padding:7px 9px; border-bottom:1px solid var(--line); vertical-align:top; text-align:left; }
+  th { background:#fafbfc; font-size:12px; color:var(--dim); font-weight:600; }
+  tr:last-child td { border-bottom:0; }
+  td.verdict { width:120px; white-space:nowrap; }
+  .btn { display:inline-block; padding:3px 10px; border:1px solid var(--line); border-radius:6px; background:#fff; cursor:pointer; font-size:12px; margin-right:4px; }
+  .btn.on-ok { background:var(--ok); color:#fff; border-color:var(--ok); }
+  .btn.on-no { background:var(--no); color:#fff; border-color:var(--no); }
+  textarea { width:100%; min-height:84px; padding:8px 10px; border:1px solid var(--line); border-radius:8px; font:inherit; resize:vertical; background:#fff; }
+  td textarea { min-height:40px; font-size:12px; }
+  .hint { color:var(--dim); font-size:12px; margin:4px 0 8px; }
+  .notify { background:#eef6ff; border:1px solid #cfe3ff; border-radius:8px; padding:8px 10px; margin-bottom:10px; font-size:12px; }
+  .thumbs { display:flex; flex-wrap:wrap; gap:8px; margin:8px 0 0; }
+  .thumb { position:relative; border:1px solid var(--line); border-radius:8px; overflow:hidden; background:#fff; }
+  .thumb img { display:block; max-height:86px; max-width:150px; object-fit:cover; }
+  .thumb button { position:absolute; top:2px; right:2px; border:0; border-radius:6px; background:#000000aa; color:#fff; font-size:11px; line-height:1; padding:3px 6px; cursor:pointer; }
+  .thumb span { display:block; font-size:10px; color:var(--dim); padding:2px 4px; }
+  .drop-on { outline:2px dashed #2563eb; outline-offset:2px; }
+  .bar { position:fixed; left:0; right:0; bottom:0; background:#fffffff2; backdrop-filter:blur(8px); border-top:1px solid var(--line); padding:0 10px; height:46px; box-sizing:border-box; display:flex; gap:8px; align-items:center; overflow:hidden; white-space:nowrap; }
+  /* 底栏：高度锁死、永不换行；窄时状态文字整段隐藏，只留按钮（用户 2026-11-05 定） */
+  .bar .grow { flex:1 1 auto; min-width:0; color:var(--dim); font-size:12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .bar button { flex:none; white-space:nowrap; }
+  @media (max-width:460px) { .bar .grow { display:none } }
+  .primary { padding:7px 14px; border:0; border-radius:8px; background:#2563eb; color:#fff; font:inherit; font-weight:600; cursor:pointer; }
+  .primary:disabled { opacity:.5; cursor:default; }
+  .ghost { padding:7px 12px; border:1px solid var(--line); border-radius:8px; background:#fff; font:inherit; cursor:pointer; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <h1 id="sheetTitle">验收表</h1>
+    <select id="sheetPick" title="切换要验收的对象"></select>
+  </div>
+  <div class="note" id="sheetNote"></div>
+
+  <div class="notify" id="notifyLine" style="display:none">
+    <label style="cursor:pointer;user-select:none">
+      <input type="checkbox" id="notifyOn" checked style="vertical-align:-1px;margin-right:6px" />
+      提交后<b>通知</b> <span id="notifyName">（未指定会话）</span> —— 跟写信一样，会把它叫起来看结果
+    </label>
+  </div>
+
+  <h2>一、验收表格区</h2>
+  <div class="hint">✓ = 通过；✗ = 不通过（请在备注写现象）；留空 = 还没验。</div>
+  <table id="grid">
+    <thead><tr><th style="width:48px">#</th><th>项目</th><th style="width:120px">结果</th><th style="width:26%">备注</th></tr></thead>
+    <tbody></tbody>
+  </table>
+
+  <h2>二、文字交流</h2>
+  <div class="hint">三块随便写；图片可以<b>直接粘贴</b>或<b>拖进来</b>（截图 → 存到电脑上 → Agent 能看到）。</div>
+  <div class="hint"><b id="secCommentTitle">① 评论区</b></div>
+  <textarea id="comment" placeholder="例：整体好用，但某一项我分不清……"></textarea>
+  <div class="hint" style="margin-top:14px"><b id="secImproveTitle">② 优化区</b></div>
+  <textarea id="improve" placeholder="例：这里应该改成……"></textarea>
+  <div class="hint" style="margin-top:14px"><b id="secChatTitle">③ 话痨区</b></div>
+  <textarea id="chat" placeholder="想到什么写什么，不用管结构；图也可以往这里贴"></textarea>
+
+  <h2>三、图片</h2>
+  <div class="hint">粘贴或拖进来都行（也可以直接往上面的文字框里贴，会自动收进来）。</div>
+  <div id="thumbs" class="thumbs"></div>
+</div>
+
+<div class="bar">
+  <span class="grow" id="status">改动会自动存在这个浏览器里</span>
+  <button class="ghost" id="reset">清空</button>
+  <button class="ghost" id="copy">复制</button>
+  <button class="primary" id="submit">提交</button>
+</div>
+
+<script>
+const ROUTE = '/dsh-fou/accept';
+const HEADER = 'x-dsh-fou';
+
+// 浮游打开本页时会带上「它正在对话的会话」：提交后可以自动通知那边（跟写信一样）。
+const QUERY = new URLSearchParams(location.search);
+const NOTIFY = { id: QUERY.get('notify') || '', name: QUERY.get('notifyName') || '' };
+if (NOTIFY.id) {
+  document.getElementById('notifyLine').style.display = '';
+  document.getElementById('notifyName').textContent = NOTIFY.name || NOTIFY.id;
+}
+
+let SHEET = { id: 'default', title: '验收表', note: '', items: [] };
+let SHEETS = [];
+const state = { rows: {}, comment: '', improve: '', chat: '', images: [] };
+
+// ---------------------------------------------------------------- 草稿存取
+const draftKey = (id) => 'fou.accept.draft.' + id;
+function loadDraft(id) {
+  try {
+    return JSON.parse(localStorage.getItem(draftKey(id)) || 'null');
+  } catch { return null; }
+}
+function saveDraft() {
+  try { localStorage.setItem(draftKey(SHEET.id), JSON.stringify(state)); } catch {}
+  paintStatus();
+}
+function paintStatus() {
+  const done = Object.values(state.rows).filter((r) => r && r.v).length;
+  document.getElementById('status').textContent =
+    '已存在本浏览器 · 已判 ' + done + ' / ' + SHEET.items.length + ' · 图 ' + state.images.length +
+    '（点「提交」才写进电脑）';
+}
+
+// ---------------------------------------------------------------- 渲染表格
+function buildGrid() {
+  const tbody = document.querySelector('#grid tbody');
+  tbody.innerHTML = '';
+  SHEET.items.forEach((item, i) => {
+    const tr = document.createElement('tr');
+    const cur = state.rows[i] || {};
+    tr.innerHTML =
+      '<td>' + (i + 1) + '</td>' +
+      '<td><b></b><div class="hint" style="margin:2px 0 0"></div></td>' +
+      '<td class="verdict"><button class="btn" data-v="ok">✓</button><button class="btn" data-v="no">✗</button></td>' +
+      '<td><textarea data-slot="' + String(item.name).replace(/"/g, '&quot;') + '" placeholder="备注"></textarea></td>';
+    tr.querySelector('b').textContent = item.name;
+    tr.querySelector('.hint').textContent = item.desc || '';
+    const note = tr.querySelector('textarea');
+    note.value = cur.note || '';
+    note.addEventListener('input', () => {
+      state.rows[i] = Object.assign({}, state.rows[i] || {}, { note: note.value });
+      saveDraft();
+    });
+    wireImageTarget(note, item.name);
+    tr.querySelectorAll('.btn').forEach((b) => {
+      if (cur.v === b.dataset.v) b.classList.add(b.dataset.v === 'ok' ? 'on-ok' : 'on-no');
+      b.addEventListener('click', () => {
+        const v = b.dataset.v;
+        const prev = state.rows[i] && state.rows[i].v;
+        state.rows[i] = Object.assign({}, state.rows[i] || {}, { v: prev === v ? '' : v });
+        tr.querySelectorAll('.btn').forEach((x) => x.classList.remove('on-ok', 'on-no'));
+        const now = state.rows[i].v;
+        if (now) b.classList.add(now === 'ok' ? 'on-ok' : 'on-no');
+        saveDraft();
+      });
+    });
+    tbody.appendChild(tr);
+  });
+}
+
+// ---------------------------------------------------------------- 切表
+async function loadSheet(id) {
+  const res = await fetch('/dsh-fou/sheet?id=' + encodeURIComponent(id));
+  if (!res.ok) throw new Error('取表失败 HTTP ' + res.status);
+  const data = await res.json();
+  SHEET = data.sheet;
+  const draft = loadDraft(SHEET.id);
+  state.rows = (draft && draft.rows) || {};
+  state.comment = (draft && draft.comment) || '';
+  state.improve = (draft && draft.improve) || '';
+  state.chat = (draft && draft.chat) || '';
+  state.images = (draft && draft.images) || [];
+  document.getElementById('sheetTitle').textContent = SHEET.title;
+  document.getElementById('sheetNote').textContent = SHEET.note || '';
+  // 三段标题可以由表单定义覆盖（"报告 / 验收 / 询问"就是靠这个换的）
+  const sec = SHEET.sections || {};
+  const paintSection = (id, fallback) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = sec[id.replace('sec', '').replace('Title', '').toLowerCase()] || fallback;
+  };
+  paintSection('secCommentTitle', '① 评论区');
+  paintSection('secImproveTitle', '② 优化区');
+  paintSection('secChatTitle', '③ 话痨区');
+  document.getElementById('comment').value = state.comment;
+  document.getElementById('improve').value = state.improve;
+  document.getElementById('chat').value = state.chat;
+  document.getElementById('sheetPick').value = SHEET.id;
+  // 记住这次选的表：下次打开直接落到同一张（用户 2026-11-05 找不到日常验收）
+  try { localStorage.setItem('fou.accept.lastsheet.v1', SHEET.id); } catch {}
+  buildGrid();
+  paintImages();
+  paintStatus();
+}
+
+async function boot() {
+  const res = await fetch('/dsh-fou/sheets');
+  const data = await res.json();
+  SHEETS = data.sheets || [];
+  const pick = document.getElementById('sheetPick');
+  pick.innerHTML = SHEETS.map((s) => '<option value="' + s.id + '">' + s.title + '</option>').join('');
+  // 打开时选哪张表：显式 ?sheet= → 上次用的 → 日常验收 → 第一张
+  // （用户 2026-11-05 找不到日常验收：原来固定选第一张，下拉不明显）
+  let remembered = '';
+  try { remembered = localStorage.getItem('fou.accept.lastsheet.v1') || ''; } catch {}
+  const hasId = (id) => SHEETS.some((s) => s.id === id);
+  const want =
+    (QUERY.get('sheet') && hasId(QUERY.get('sheet')) ? QUERY.get('sheet') : '') ||
+    (hasId(remembered) ? remembered : '') ||
+    (hasId('fou-daily') ? 'fou-daily' : '') ||
+    (SHEETS[0] && SHEETS[0].id);
+  if (!want) {
+    document.getElementById('sheetNote').textContent = '没有找到任何表单定义（_验收\\_表单\\*.json）';
+    return;
+  }
+  await loadSheet(want);
+}
+boot().catch((error) => {
+  document.getElementById('sheetNote').textContent = '加载失败：' + error.message;
+});
+
+document.getElementById('sheetPick').addEventListener('change', (e) => {
+  loadSheet(e.target.value).catch((error) => alert('切换失败：' + error.message));
+});
+
+// ---------------------------------------------------------------- 文字区
+['comment', 'improve', 'chat'].forEach((id) => {
+  const el = document.getElementById(id);
+  el.addEventListener('input', () => { state[id] = el.value; saveDraft(); });
+  wireImageTarget(el, el.dataset.slot);
+});
+
+// ---------------------------------------------------------------- 图片
+function addImage(dataUrl, from) {
+  state.images.push({ dataUrl, from: from || '' });
+  saveDraft();
+  paintImages();
+}
+
+function fileToDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(reader.error || new Error('读取失败'));
+    reader.readAsDataURL(file);
+  });
+}
+
+async function takeFiles(files, from) {
+  for (const file of files) {
+    if (!file.type || !file.type.startsWith('image/')) continue;
+    try { addImage(await fileToDataUrl(file), from); } catch {}
+  }
+}
+
+function wireImageTarget(el, from) {
+  if (!el || el.dataset.imgWired === '1') return;
+  el.dataset.imgWired = '1';
+  el.addEventListener('paste', (event) => {
+    const items = (event.clipboardData && event.clipboardData.files) || [];
+    if (items.length === 0) return;
+    event.preventDefault();
+    takeFiles(items, from);
+  });
+  el.addEventListener('dragover', (event) => { event.preventDefault(); el.classList.add('drop-on'); });
+  el.addEventListener('dragleave', () => el.classList.remove('drop-on'));
+  el.addEventListener('drop', (event) => {
+    event.preventDefault();
+    el.classList.remove('drop-on');
+    takeFiles(event.dataTransfer.files || [], from);
+  });
+}
+
+function paintImages() {
+  const box = document.getElementById('thumbs');
+  box.innerHTML = '';
+  state.images.forEach((image, i) => {
+    const div = document.createElement('div');
+    div.className = 'thumb';
+    const img = document.createElement('img');
+    img.src = image.dataUrl;
+    const del = document.createElement('button');
+    del.textContent = '×';
+    del.addEventListener('click', () => { state.images.splice(i, 1); saveDraft(); paintImages(); });
+    const label = document.createElement('span');
+    label.textContent = image.from || '（未注明）';
+    div.appendChild(img);
+    div.appendChild(del);
+    div.appendChild(label);
+    box.appendChild(div);
+  });
+}
+
+// 整页也能接图（拖到空白处）
+document.addEventListener('dragover', (e) => e.preventDefault());
+document.addEventListener('drop', (e) => {
+  if (e.target && e.target.closest && e.target.closest('textarea')) return;
+  if (!e.dataTransfer || !e.dataTransfer.files || e.dataTransfer.files.length === 0) return;
+  e.preventDefault();
+  takeFiles(e.dataTransfer.files, '（页面）');
+});
+
+// ---------------------------------------------------------------- 提交
+function payload() {
+  return {
+    sheetId: SHEET.id,
+    title: SHEET.title,
+    items: SHEET.items.map((item, i) => ({
+      name: item.name,
+      verdict: (state.rows[i] && state.rows[i].v) || '',
+      note: (state.rows[i] && state.rows[i].note) || '',
+    })),
+    comment: state.comment,
+    improve: state.improve,
+    chat: state.chat,
+    images: state.images.map((image) => ({ dataUrl: image.dataUrl, from: image.from })),
+  };
+}
+
+function summaryLine() {
+  const data = payload();
+  // 正向项算通过率，反向项算可信度 —— 两个数分开算（用户 2026-11-05 定）。
+  const forward = data.items.filter((i) => i.reverse !== true);
+  const reverse = data.items.filter((i) => i.reverse === true);
+  const ok = forward.filter((i) => i.verdict === 'ok').length;
+  const no = forward.filter((i) => i.verdict === 'no').length;
+  const allOk = forward.length > 0 && forward.every((i) => i.verdict === 'ok');
+  const anyReverseOk = reverse.some((i) => i.verdict === 'ok');
+  const credit = reverse.length === 0 ? '' : allOk && anyReverseOk ? ' · ⚠️答案可能未细读' : ' · 答案可信';
+  return '通过 ' + ok + ' / ' + forward.length + ' · 不通过 ' + no +
+    (reverse.length ? ' · 反向项 ' + reverse.length + ' 条' : '') +
+    credit +
+    (data.images.length ? ' · 图 ' + data.images.length : '');
+}
+
+async function notifyParent(summary, paths) {
+  if (!NOTIFY.id) return { skipped: true };
+  if (!document.getElementById('notifyOn').checked) return { skipped: true };
+  // 走 postMessage 而不是 HTTP：调度总台可能未激活（实测 405），浮游手里有会话控制器。
+  if (window.parent === window) return { skipped: true };
+  window.parent.postMessage(
+    {
+      type: 'fou:accept-saved',
+      notify: NOTIFY.id,
+      notifyName: NOTIFY.name,
+      notifyEnabled: true,
+      summary,
+      mdPath: paths.mdPath || '',
+    },
+    window.location.origin,
+  );
+  return { forwarded: true };
+}
+
+document.getElementById('reset').addEventListener('click', () => {
+  if (!confirm('清空这张表的勾选、文字与图片？（已提交的存档不受影响）')) return;
+  localStorage.removeItem(draftKey(SHEET.id));
+  location.reload();
+});
+
+document.getElementById('copy').addEventListener('click', async () => {
+  const data = payload();
+  const mark = (v) => (v === 'ok' ? '✓' : v === 'no' ? '✗' : '（未验）');
+  const lines = ['# ' + data.title, ''];
+  data.items.forEach((it) => lines.push('- ' + mark(it.verdict) + ' ' + it.name + (it.note ? ' —— ' + it.note : '')));
+  [['① 评论区', data.comment], ['② 优化区', data.improve], ['③ 话痨区', data.chat]].forEach(([t, v]) => {
+    if ((v || '').trim()) lines.push('', '## ' + t, v.trim());
+  });
+  if (data.images.length) lines.push('', '## 图片', '（' + data.images.length + ' 张，随提交一起存档）');
+  try {
+    await navigator.clipboard.writeText(lines.join('\n'));
+    document.getElementById('status').textContent = '已复制到剪贴板';
+  } catch { document.getElementById('status').textContent = '复制失败，请手动选择'; }
+});
+
+document.getElementById('submit').addEventListener('click', async () => {
+  const btn = document.getElementById('submit');
+  const status = document.getElementById('status');
+  btn.disabled = true;
+  status.textContent = '提交中…（图片会一起上传）';
+  try {
+    const res = await fetch(ROUTE, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', [HEADER]: '1' },
+      body: JSON.stringify(payload()),
+    });
+    const text = await res.text();
+    if (!res.ok) throw new Error('HTTP ' + res.status + ' ' + text.slice(0, 120));
+    const data = JSON.parse(text);
+    let note = '✅ 已存档：' + (data.mdPath || '') + (data.images ? '（含图 ' + data.images + ' 张）' : '');
+    try {
+      const sent = await notifyParent(summaryLine(), data);
+      if (sent.forwarded) note += ' · 已请浮游通知 ' + (NOTIFY.name || NOTIFY.id);
+      else if (sent.skipped && NOTIFY.id) note += '（未通知会话）';
+    } catch (error) {
+      note += ' · ⚠️ 通知失败：' + error.message;
+    }
+    status.textContent = note;
+  } catch (error) {
+    status.textContent = '❌ 提交失败：' + error.message + '（可用「复制」兜底）';
+  } finally {
+    btn.disabled = false;
+  }
+});
+</script>
+</body>
+</html>

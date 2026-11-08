@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>编辑器</title>
+<style>
+  :root { --fg:#1f2328; --dim:#6b7280; --line:#e5e7eb; --bg:#f7f8fa; --accent:#2563eb; }
+  * { box-sizing:border-box; }
+  html,body { height:100%; margin:0; }
+  body { font:13px/1.6 "Segoe UI","Microsoft YaHei",system-ui,sans-serif; color:var(--fg); background:var(--bg); display:flex; flex-direction:column; overflow:hidden; }
+  .bar { display:flex; flex-wrap:wrap; gap:4px; align-items:center; padding:6px 8px; background:#fff; border-bottom:1px solid var(--line); }
+  .bar .sep { width:1px; height:18px; background:var(--line); margin:0 4px; }
+  .bar button { border:1px solid var(--line); background:#fff; border-radius:6px; font:inherit; font-size:12px; line-height:1; padding:4px 8px; cursor:pointer; color:var(--fg); }
+  .bar button:hover { background:#f3f4f6; }
+  .bar button.on { background:var(--accent); color:#fff; border-color:var(--accent); }
+  .bar .lbl { font-size:11px; color:var(--dim); margin-right:2px; }
+  .panes { flex:1; min-height:0; display:flex; }
+  .pane { flex:1; min-width:0; display:flex; flex-direction:column; }
+  .pane + .pane { border-left:1px solid var(--line); }
+  textarea { flex:1; width:100%; margin:0; padding:12px 14px; border:0; outline:none; resize:none; font:12.5px/1.7 ui-monospace,Consolas,"Cascadia Mono",monospace; background:#fff; color:var(--fg); tab-size:2; }
+  .preview { flex:1; overflow:auto; padding:12px 16px; background:#fff; }
+  .preview:empty::before { content:"预览"; color:#c7ccd4; }
+  .preview h1,.preview h2,.preview h3 { margin:14px 0 6px; line-height:1.35; }
+  .preview h1 { font-size:17px; } .preview h2 { font-size:15px; } .preview h3 { font-size:13.5px; }
+  .preview p { margin:6px 0; }
+  .preview ul { margin:6px 0; padding-left:20px; }
+  .preview table { border-collapse:collapse; margin:8px 0; font-size:12px; }
+  .preview th,.preview td { border:1px solid var(--line); padding:4px 8px; text-align:left; }
+  .preview th { background:#fafbfc; }
+  .preview code { background:#eef1f5; padding:1px 4px; border-radius:4px; font-size:11.5px; }
+  .preview pre { background:#f6f8fa; padding:9px 11px; border-radius:8px; overflow:auto; }
+  .preview pre code { background:none; padding:0; }
+  .preview blockquote { margin:6px 0; padding:2px 0 2px 10px; border-left:3px solid var(--line); color:#4b5563; }
+  .foot { display:flex; align-items:center; gap:8px; padding:8px 10px; background:#fff; border-top:1px solid var(--line); }
+  .foot .grow { flex:1; min-width:0; display:flex; gap:10px; align-items:baseline; color:var(--dim); font-size:11.5px; }
+  .foot .grow > span { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .foot .grow > #stBytes { flex:none; }
+  .foot .grow > #stPath { flex:1 1 auto; min-width:0; text-align:right; }
+  .foot .grow.ok { color:#0d9458; }
+  .foot .grow.err { color:#b91c1c; }
+  .foot .opt { display:inline-flex; align-items:center; gap:4px; font-size:12px; color:var(--dim); cursor:pointer; user-select:none; white-space:nowrap; }
+  .foot .opt input { margin:0; }
+  .titlebar { padding:6px 10px; background:#fff; border-bottom:1px solid var(--line); }
+  .titlebar input { width:100%; border:1px solid var(--line); border-radius:8px; padding:6px 10px; font:inherit; font-size:13px; outline:none; background:#fff; color:var(--fg); }
+  .titlebar input:focus { border-color:var(--accent); }
+  .foot button { font:inherit; padding:7px 14px; border-radius:8px; border:1px solid var(--line); background:#fff; cursor:pointer; }
+  .foot button.primary { background:var(--accent); color:#fff; border-color:var(--accent); font-weight:600; }
+  .foot button:disabled { opacity:.5; cursor:default; }
+</style>
+</head>
+<body>
+<div class="bar">
+  <!-- 序号按钮（一、A.①a.1.）2026-11-08 取消：它们只会插入序号、不会自动续排，
+       做一半的模板比没有更烦。结构类按钮保留（B / code / H2 / 列表 / 引用 / 表格）。 -->
+  <button data-ins="〔" data-ins2="〕" title="归属标签">〔标签〕</button>
+  <span class="sep"></span>
+  <button data-wrap="**" title="粗体">B</button>
+  <button data-wrap="`" title="行内代码">`code`</button>
+  <button data-block="## " title="标题">H2</button>
+  <button data-block="- " title="列表">• 列表</button>
+  <button data-block="> " title="引用">❝ 引用</button>
+  <button data-table="1" title="插入 3 列表格">▦ 表格</button>
+  <span class="sep"></span>
+  <button id="previewToggle" class="on" title="显示/隐藏预览">预览</button>
+  <button id="clear" title="清空">清空</button>
+</div>
+
+<div class="titlebar">
+  <input id="title" placeholder="标题（可留空 → 保存时取正文第一行）" maxlength="80" />
+</div>
+
+<div class="panes">
+  <div class="pane"><textarea id="input" spellcheck="false" autocomplete="off" placeholder="在这里写。&#10;&#10;用上面那排按钮插层级符号；Tab / Shift+Tab 缩进。&#10;写好按 Ctrl+Enter 发到会话。"></textarea></div>
+  <div class="pane" id="previewPane"><div class="preview" id="preview"></div></div>
+</div>
+
+<div class="foot">
+  <label class="opt"><input type="checkbox" id="asBody" checked /> 正文</label>
+  <label class="opt"><input type="checkbox" id="asFile" checked /> 文件</label>
+  <span class="grow" id="status"><span id="stState">Ctrl+Enter 发送 · Tab 缩进</span><span id="stBytes"></span><span id="stPath"></span></span>
+  <button id="save">保存</button>
+  <button id="send" class="primary">发送</button>
+</div>
+
+<script>
+const ROUTE_TARGET = new URLSearchParams(location.search);
+const NOTIFY = { id: ROUTE_TARGET.get('notify') || '', name: ROUTE_TARGET.get('notifyName') || '' };
+const DRAFT_KEY = 'fou.editor.draft.v1';
+
+const elInput = document.getElementById('input');
+const elPreview = document.getElementById('preview');
+const elStatus = document.getElementById('status');
+const elState = document.getElementById('stState');
+const elBytes = document.getElementById('stBytes');
+const elPath = document.getElementById('stPath');
+const elPane = document.getElementById('previewPane');
+const elTitle = document.getElementById('title');
+
+// ---------------------------------------------------------------- 存档（编辑即保存 / 发送即落稿）
+const SAVE_DELAY_MS = 500;
+const API = { draft: '/dsh-fou/draft', commit: '/dsh-fou/commit' };
+let baseMtime = 0;
+let saveTimer = null;
+let saving = false;
+
+function stampHHMM(d) {
+  const t = d || new Date();
+  return String(t.getHours()).padStart(2, '0') + ':' + String(t.getMinutes()).padStart(2, '0');
+}
+
+/** 防抖写草稿到 _草稿\editor.md（没变就不写、带 baseMtime 冲突检测）。 */
+async function saveDraftFile() {
+  if (saving) return;
+  saving = true;
+  try {
+    const res = await fetch(API.draft, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-dsh-fou': '1' },
+      body: JSON.stringify({ text: elInput.value, title: elTitle.value, baseMtime }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.status === 409 && data.conflict) {
+      // 磁盘上的比这里新 —— 不覆盖，把选择权留给用户
+      setStatus('⚠️ 磁盘草稿更新过（另一处改的），本次未覆盖', 'err');
+      return;
+    }
+    if (!res.ok) throw new Error(data.error || 'HTTP ' + res.status);
+    baseMtime = typeof data.baseMtime === 'number' ? data.baseMtime : baseMtime;
+    setSaved(stampHHMM(), data.bytes || 0, data.path || data.file || '');
+  } catch (error) {
+    setStatus('草稿保存失败：' + error.message, 'err');
+  } finally {
+    saving = false;
+  }
+}
+
+function scheduleSave() {
+  if (saveTimer) clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    saveTimer = null;
+    void saveDraftFile();
+  }, SAVE_DELAY_MS);
+}
+
+function targetText() {
+  return NOTIFY.id ? ' → ' + (NOTIFY.name || NOTIFY.id) : '（未指定会话）';
+}
+
+// ---------------------------------------------------------------- 极简 markdown
+function esc(s) {
+  return String(s).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+}
+
+function inline(s) {
+  let t = esc(s);
+  t = t.replace(/`([^`]+)`/g, '<code>$1</code>');
+  t = t.replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>');
+  return t;
+}
+
+/** 够用就行：标题 / 列表 / 表格 / 代码块 / 引用 / 段落。不是完整 md。 */
+function renderMarkdown(src) {
+  const lines = String(src).replace(/\r\n/g, '\n').split('\n');
+  const out = [];
+  let i = 0;
+  let inCode = false;
+  let codeBuf = [];
+  while (i < lines.length) {
+    const line = lines[i];
+    if (/^```/.test(line)) {
+      if (inCode) {
+        out.push('<pre><code>' + esc(codeBuf.join('\n')) + '</code></pre>');
+        codeBuf = [];
+        inCode = false;
+      } else {
+        inCode = true;
+      }
+      i += 1;
+      continue;
+    }
+    if (inCode) { codeBuf.push(line); i += 1; continue; }
+
+    // 表格：本行含 | 且下一行是分隔行
+    if (line.indexOf('|') >= 0 && i + 1 < lines.length && /^\s*\|?[\s:-]+\|/.test(lines[i + 1])) {
+      const head = line.split('|').map((c) => c.trim()).filter((c, idx, arr) => !(c === '' && (idx === 0 || idx === arr.length - 1)));
+      const rows = [];
+      i += 2;
+      while (i < lines.length && lines[i].indexOf('|') >= 0) {
+        rows.push(lines[i].split('|').map((c) => c.trim()).filter((c, idx, arr) => !(c === '' && (idx === 0 || idx === arr.length - 1))));
+        i += 1;
+      }
+      out.push(
+        '<table><thead><tr>' + head.map((h) => '<th>' + inline(h) + '</th>').join('') + '</tr></thead><tbody>' +
+        rows.map((r) => '<tr>' + r.map((c) => '<td>' + inline(c) + '</td>').join('') + '</tr>').join('') +
+        '</tbody></table>',
+      );
+      continue;
+    }
+
+    const h = /^(#{1,4})\s+(.*)$/.exec(line);
+    if (h) { out.push('<h' + h[1].length + '>' + inline(h[2]) + '</h' + h[1].length + '>'); i += 1; continue; }
+
+    if (/^>\s?/.test(line)) { out.push('<blockquote>' + inline(line.replace(/^>\s?/, '')) + '</blockquote>'); i += 1; continue; }
+
+    if (/^\s*[-*+]\s+/.test(line)) {
+      const items = [];
+      while (i < lines.length && /^\s*[-*+]\s+/.test(lines[i])) {
+        items.push('<li>' + inline(lines[i].replace(/^\s*[-*+]\s+/, '')) + '</li>');
+        i += 1;
+      }
+      out.push('<ul>' + items.join('') + '</ul>');
+      continue;
+    }
+
+    if (line.trim() === '') { i += 1; continue; }
+
+    out.push('<p>' + inline(line) + '</p>');
+    i += 1;
+  }
+  if (inCode && codeBuf.length) out.push('<pre><code>' + esc(codeBuf.join('\n')) + '</code></pre>');
+  return out.join('\n');
+}
+
+function paintPreview() {
+  elPreview.innerHTML = renderMarkdown(elInput.value);
+}
+
+// ---------------------------------------------------------------- 状态
+// 2026-11-08（用户）：底栏灰字挤成一条，按挂板模式改成分段 —— 三段各自 nowrap，
+// 只有路径那段可省略（`…`），不再整句一起换行。
+function setStatus(text, kind) {
+  if (elState) elState.textContent = text;
+  if (elBytes) elBytes.textContent = '';
+  if (elPath) elPath.textContent = '';
+  elStatus.className = 'grow' + (kind ? ' ' + kind : '');
+}
+function setSaved(stamp, bytes, path) {
+  if (elState) elState.textContent = '✓ 已保存 ' + stamp;
+  if (elBytes) elBytes.textContent = Number(bytes || 0).toLocaleString('en-US') + ' B';
+  if (elPath) elPath.textContent = path || '';
+  elStatus.className = 'grow ok';
+}
+
+function saveDraft() {
+  try { localStorage.setItem(DRAFT_KEY, elInput.value); } catch {}
+}
+
+function paintCount() {
+  const text = elInput.value;
+  const lines = text === '' ? 0 : text.split('\n').length;
+  const title = elTitle.value.trim() === '' ? '（标题取第一行）' : '「' + elTitle.value.trim() + '」';
+  setStatus(lines + ' 行 · ' + text.length + ' 字 · ' + title + targetText() + ' · Ctrl+Enter 发送');
+}
+
+elInput.addEventListener('input', () => {
+  paintPreview();
+  saveDraft();
+  paintCount();
+  scheduleSave();
+});
+
+elTitle.addEventListener('input', () => {
+  saveDraft();
+  paintCount();
+  scheduleSave();
+});
+
+// ---------------------------------------------------------------- 插入工具
+function insertAtCursor(text, selectFrom) {
+  const start = elInput.selectionStart;
+  const end = elInput.selectionEnd;
+  const before = elInput.value.slice(0, start);
+  const after = elInput.value.slice(end);
+  elInput.value = before + text + after;
+  const caret = start + (selectFrom === undefined ? text.length : selectFrom);
+  elInput.selectionStart = elInput.selectionEnd = caret;
+  elInput.focus();
+  paintPreview();
+  saveDraft();
+  paintCount();
+}
+
+document.querySelectorAll('[data-ins]').forEach((b) => {
+  b.addEventListener('click', () => {
+    const a = b.getAttribute('data-ins');
+    const z = b.getAttribute('data-ins2');
+    if (z) {
+      // 标签：插入〔标签〕并把中间选中，直接打字即可覆盖
+      const start = elInput.selectionStart;
+      const sel = elInput.value.slice(start, elInput.selectionEnd) || '标签';
+      insertAtCursor(a + sel + z);
+      elInput.setSelectionRange(start + a.length, start + a.length + sel.length);
+    } else {
+      insertAtCursor(a);
+    }
+  });
+});
+
+document.querySelectorAll('[data-wrap]').forEach((b) => {
+  b.addEventListener('click', () => {
+    const w = b.getAttribute('data-wrap');
+    const start = elInput.selectionStart;
+    const end = elInput.selectionEnd;
+    const sel = elInput.value.slice(start, end) || '文字';
+    elInput.setSelectionRange(start, end);
+    insertAtCursor(w + sel + w, w.length);
+    elInput.setSelectionRange(start + w.length, start + w.length + sel.length);
+  });
+});
+
+document.querySelectorAll('[data-block]').forEach((b) => {
+  b.addEventListener('click', () => {
+    const p = b.getAttribute('data-block');
+    const start = elInput.selectionStart;
+    const lineStart = elInput.value.lastIndexOf('\n', start - 1) + 1;
+    elInput.setSelectionRange(lineStart, lineStart);
+    insertAtCursor(p);
+  });
+});
+
+document.querySelectorAll('[data-table]').forEach((b) => {
+  b.addEventListener('click', () => {
+    insertAtCursor('| 列一 | 列二 | 列三 |\n| --- | --- | --- |\n|  |  |  |\n');
+  });
+});
+
+// ---------------------------------------------------------------- 快捷键
+elInput.addEventListener('keydown', (event) => {
+  if (event.key === 'Tab') {
+    event.preventDefault();
+    const start = elInput.selectionStart;
+    const lineStart = elInput.value.lastIndexOf('\n', start - 1) + 1;
+    if (event.shiftKey) {
+      if (elInput.value.slice(lineStart, lineStart + 2) === '  ') {
+        elInput.setSelectionRange(lineStart, lineStart + 2);
+        elInput.setRangeText('', lineStart, lineStart + 2, 'end');
+      }
+    } else {
+      elInput.setSelectionRange(lineStart, lineStart);
+      elInput.setRangeText('  ', lineStart, lineStart, 'end');
+    }
+    paintPreview(); saveDraft(); paintCount();
+    return;
+  }
+  if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+    event.preventDefault();
+    void send();
+  }
+});
+
+document.getElementById('previewToggle').addEventListener('click', (e) => {
+  const on = elPane.style.display !== 'none';
+  elPane.style.display = on ? 'none' : '';
+  e.currentTarget.classList.toggle('on', !on);
+});
+
+document.getElementById('clear').addEventListener('click', () => {
+  if (elInput.value.trim() !== '' && !confirm('清空编辑器内容？')) return;
+  elInput.value = '';
+  paintPreview(); saveDraft(); paintCount();
+});
+
+// ---------------------------------------------------------------- 保存（只存，不发）
+//
+// 2026-11-08（用户）：[复制] 取消、换成 [保存]。
+// 理由：编辑的"复制"往往就是正文本身，Ctrl+A / Ctrl+C 就够；验收表才需要复刻按钮。
+// 而"保存"是编辑真正的主功能 —— **发送附加于保存**（挂板反过来：保存附加于发送）。
+// 所以：保存 = 灰色（人不需被提醒就会点）；发送 = 蓝色（对接 DSH 的首要职能，要醒目）。
+async function commitDoc() {
+  const text = elInput.value;
+  if (text.trim() === '') { setStatus('内容为空', 'err'); return null; }
+  const res = await fetch(API.commit, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-dsh-fou': '1' },
+    body: JSON.stringify({ text, title: elTitle.value }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || 'HTTP ' + res.status);
+  return data.doc || null;
+}
+
+document.getElementById('save').addEventListener('click', async () => {
+  const btn = document.getElementById('save');
+  btn.disabled = true;
+  setStatus('保存中…');
+  try {
+    const doc = await commitDoc();
+    if (!doc) { btn.disabled = false; return; }
+    setSaved(stampHHMM(), doc.bytes || 0, doc.path || '');
+    // 让浮游记一笔「我存过这一份」（编辑页的"最近"靠它）
+    try {
+      window.parent.postMessage(
+        { type: 'fou:remember', mode: 'edit', title: doc.name || doc.path || '稿件', openUrl: doc.path || '' },
+        window.location.origin,
+      );
+    } catch (error) {
+      /* 不在浮游里也无所谓 */
+    }
+  } catch (error) {
+    setStatus('保存失败：' + error.message, 'err');
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+// 地址栏（底栏路径）一键复制 —— 复制稿件路径，方便 @ 到输入框
+if (elPath) {
+  elPath.style.cursor = 'pointer';
+  elPath.title = '点一下复制路径';
+  elPath.addEventListener('click', async () => {
+    const path = elPath.textContent || '';
+    if (!path) return;
+    try {
+      await navigator.clipboard.writeText(path);
+      elPath.textContent = '已复制 ✓';
+      setTimeout(() => { elPath.textContent = path; }, 1200);
+    } catch (error) {
+      /* 剪贴板不可用就算了 */
+    }
+  });
+}
+
+// ---------------------------------------------------------------- 发送
+async function send() {
+  const text = elInput.value.trim();
+  if (text === '') { setStatus('内容为空', 'err'); return; }
+  if (window.parent === window) { setStatus('不在浮游里，无法发送（可先点保存取路径）', 'err'); return; }
+
+  const asBody = document.getElementById('asBody').checked;
+  const asFile = document.getElementById('asFile').checked;
+  if (!asBody && !asFile) { setStatus('正文和文件都没勾 —— 没东西可发', 'err'); return; }
+
+  const btn = document.getElementById('send');
+  btn.disabled = true;
+  setStatus('发送中…');
+
+  // ① 发送即落稿：稿件只增不改，先落盘再发，失败就不发（不留"发了但没稿"的账）
+  let doc = null;
+  if (asFile) {
+    try {
+      const res = await fetch(API.commit, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-dsh-fou': '1' },
+        body: JSON.stringify({ text: elInput.value, title: elTitle.value }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'HTTP ' + res.status);
+      doc = data.doc;
+    } catch (error) {
+      btn.disabled = false;
+      setStatus('落稿失败，未发送：' + error.message, 'err');
+      return;
+    }
+  }
+
+  // ② 正文 + 原稿路径一起交给浮游
+  window.parent.postMessage(
+    {
+      type: 'fou:editor-send',
+      notify: NOTIFY.id,
+      notifyName: NOTIFY.name,
+      text,
+      mdPath: doc ? doc.path : '',
+      asBody,
+    },
+    window.location.origin,
+  );
+
+  btn.disabled = false;
+  void saveDraftFile();
+  const parts = [];
+  if (asBody) parts.push('正文');
+  if (doc) parts.push('稿件 ' + doc.name);
+  setStatus('已发送 ✓（' + parts.join(' + ') + '）· 可继续编辑', 'ok');
+}
+
+document.getElementById('send').addEventListener('click', () => void send());
+
+// ---------------------------------------------------------------- 启动
+try {
+  const draft = localStorage.getItem(DRAFT_KEY);
+  if (draft) elInput.value = draft;
+} catch {}
+paintPreview();
+paintCount();
+elInput.focus();
+// 打开就先写一次草稿：这样"_草稿\editor.md"立刻存在，不是"用过才有"
+if (elInput.value.trim() !== '') scheduleSave();
+</script>
+</body>
+</html>

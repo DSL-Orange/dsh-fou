@@ -91,21 +91,48 @@ function kindLabel(kind) {
   return { html: 'html', md: 'markdown', json: 'json', text: '文本', url: '链接' }[kind] || kind || '文本';
 }
 
+// 挂表的种类名（2026-11-09 最小规范：form + formKind 两条）。
+// 规范统一的是「怎么进挂板」，不是「表长什么样」—— 后者归表自己。
+function formLabel(kind) {
+  return (
+    { accept: '验收表', annotate: '批注表', reply: '回执', review: '评审表' }[kind] ||
+    kind ||
+    '挂表'
+  );
+}
+
 function renderList() {
   elList.innerHTML = '';
-  if (panels.length === 0) {
+  // 挂板只列**挂表**（form === true）。其余一律不显示 —— 它们该走浏览。
+  const forms = panels.filter((p) => p && p.form === true);
+  const hidden = panels.length - forms.length;
+  if (forms.length === 0) {
     const li = document.createElement('li');
     li.style.color = 'var(--dim)';
     li.style.cursor = 'default';
-    li.textContent = '（空）';
+    li.textContent = '（还没有挂表）';
     elList.appendChild(li);
-    return;
   }
-  for (const p of panels) {
+  for (const p of forms) {
     const li = document.createElement('li');
     if (current && current.id === p.id) li.className = 'on';
-    li.innerHTML = '<span class="t">' + esc(p.title) + '</span><span class="m">' + esc(kindLabel(p.kind)) + ' · ' + esc(p.hungAt || '') + '</span>';
+    li.innerHTML =
+      '<span class="t">' +
+      esc(p.title) +
+      '</span><span class="m">' +
+      esc(formLabel(p.formKind)) +
+      ' · ' +
+      esc(p.hungAt || '') +
+      '</span>';
     li.addEventListener('click', () => openPanel(p.id));
+    elList.appendChild(li);
+  }
+  if (hidden > 0) {
+    const li = document.createElement('li');
+    li.style.color = 'var(--dim)';
+    li.style.cursor = 'default';
+    li.style.marginTop = '10px';
+    li.textContent = '另有 ' + hidden + ' 件是文件，不属挂板 —— 用「浏览」看它们';
     elList.appendChild(li);
   }
 }

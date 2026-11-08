@@ -1,5 +1,5 @@
 /**
- * @local/dsh-courier · 宿主半（v0：只有验收表）
+ * @local/dsh-fou · 宿主半（v0：只有验收表）
  *
  * 为什么需要宿主半：验收表是交互页面，如果从本地文件（file://）打开，它发不出
  * 任何请求（跨源被拦），结果只能靠"复制粘贴"带出来。所以由宿主同源提供页面，
@@ -522,7 +522,7 @@ async function saveResult(outDir, result) {
 
 // ---------------------------------------------------------------- plugin
 
-export const name = '@local/dsh-courier'
+export const name = '@local/dsh-fou'
 
 /** 所有路由都走这里，且任何异常都不让它冒到启动流程。
  *
@@ -744,11 +744,11 @@ export function apply(ctx, config) {
       try {
         scoped.effect(
           () => scoped.webServer.register({ kind: 'exact', path, handler: guarded(handler) }),
-          'dsh-courier: ' + path,
+          'dsh-fou: ' + path,
         )
       } catch (error) {
         // 路由注册失败不能让整个宿主启动失败 —— 浮游的界面照常可用。
-        console.error('[dsh-courier] 路由注册失败：' + path, error)
+        console.error('[dsh-fou] 路由注册失败：' + path, error)
       }
     }
   })

@@ -1,3 +1,3 @@
 - insert:
-    - id: courier
-      name: '@local/dsh-courier'
+    - id: fou
+      name: '@local/dsh-fou'

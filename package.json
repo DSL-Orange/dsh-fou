@@ -1,9 +1,9 @@
 {
-  "name": "@local/dsh-courier",
+  "name": "@local/dsh-fou",
   "version": "0.2.0",
   "private": true,
   "type": "module",
-  "description": "A persistent floating input bar over every Harness Web view: send one message to the current session without leaving the plugins or market page. · 常驻悬浮输入条：任何页面都能给当前会话发一条消息，不用切回会话视图。v0.1 只送不收。",
+  "description": "A floating container layer over DSH: chat without leaving the page, travel between sessions, and open anything — a web page, a file, or a plugin's own UI — in one pane. · 浮游：DSH 之上的一层悬浮容器 —— 不离开当前位置，就能碰到别处。",
   "exports": {
     ".": "./index.js",
     "./client": "./client.js",

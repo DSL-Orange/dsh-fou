@@ -1189,6 +1189,8 @@ window.__ModuleLoader__.load({
       const pillTextRef = React.useRef(null);
       const [pillOverflow, setPillOverflow] = React.useState(false);
       const pillWrapRef = React.useRef(null);
+      // 球也要挂滚轮（2026-11-09 第 3 条：球支持滚轮切应用）。
+      const bubbleRef = React.useRef(null);
       const pillEditRef = React.useRef(null);
       const timerRef = React.useRef(null);
       const mountedRef = React.useRef(true);
@@ -2212,8 +2214,9 @@ window.__ModuleLoader__.load({
       // 判据（用户 2026-11-09）：**零阶 = 就地。** 滚轮换的是"胶囊里装哪一块"，
       // 不改变形态、不移动位置 —— 这就是它和左键运动（迁移）的分野。
       React.useEffect(() => {
-        if (mode !== 'pill') return undefined;
-        const el = pillWrapRef.current;
+        // 球也挂（2026-11-09 用户第 3 条）：球上滚轮切应用。
+        if (mode !== 'pill' && mode !== 'orb') return undefined;
+        const el = mode === 'orb' ? bubbleRef.current : pillWrapRef.current;
         if (!el) return undefined;
         const onWheel = (event) => {
           // 列表浮层自己会滚 —— 在它的范围内**不劫持**滚轮。
@@ -2221,12 +2224,42 @@ window.__ModuleLoader__.load({
           // （否则滚列表 = 滚胶囊，列表永远滚不动。）
           const list = pillListRef.current;
           if (list && event.target instanceof Node && list.contains(event.target)) return;
-          // 触控板会一次抛出很多小 delta，太小就不算"滚了一格"。
-          if (Math.abs(event.deltaY) < 4) return;
-          const step = event.deltaY > 0 ? 1 : -1;
 
-          // 滚轮**只**切三态（2026-11-09 用户敲定：取消滚轮切会话）。
-          // 一个滚轮只有一个含义 —— 这条取消掉之后，"逻辑冲突"就没了。
+          // ── 二维切换（2026-11-09 用户："横切纵切，哪个好用，得试一下"）
+          //
+          //   纵切（deltaY）→ 形态（信息 / 输入 / 穿越）
+          //   横切（deltaX，或 Shift+滚轮）→ 应用（浮游 / 地颂 / …）
+          //
+          // ⚠ 现实问题：**普通鼠标没有 deltaX**，所以横切要退到 Shift+滚轮。
+          //    这正是"得试一下"的东西 —— Shift+滚轮 的手感能不能接受。
+          const horizontal =
+            Math.abs(event.deltaX) > Math.abs(event.deltaY) || event.shiftKey === true;
+          const magnitude = horizontal ? Math.abs(event.deltaX) : Math.abs(event.deltaY);
+          // 触控板会一次抛出很多小 delta，太小不算"滚了一格"。
+          // Shift+滚轮 时 deltaX 是 0，所以这里放行（用 deltaY 的符号判方向）。
+          if (horizontal ? event.deltaX === 0 && !event.shiftKey : magnitude < 4) return;
+
+          const step = horizontal
+            ? event.deltaX > 0 || (event.deltaX === 0 && event.deltaY > 0)
+              ? 1
+              : -1
+            : event.deltaY > 0
+              ? 1
+              : -1;
+
+          // 球上没有"三态"，滚轮全给"切应用"。
+          if (mode === 'orb' || horizontal) {
+            if (pillApps.length === 0) return;
+            event.preventDefault();
+            const order = [null, ...pillApps.map((entry) => entry.id)];
+            const at = order.indexOf(pillApp);
+            const next = order[(at + step + order.length) % order.length];
+            setPillApp(next);
+            setPillAppTick((n) => n + 1);
+            return;
+          }
+
+          // 纵切：切三态（2026-11-09 敲定：滚轮在胶囊上只干这一件事）。
           const index = PILL_PANES.indexOf(pillPaneRef.current);
           const next = PILL_PANES[(index + step + PILL_PANES.length) % PILL_PANES.length];
           if (next === pillPaneRef.current) return;
@@ -2237,7 +2270,7 @@ window.__ModuleLoader__.load({
         };
         el.addEventListener('wheel', onWheel, { passive: false });
         return () => el.removeEventListener('wheel', onWheel);
-      }, [mode]);
+      }, [mode, pillApps.length, pillApp]);
 
       // 切到输入态时，把光标放进胶囊里的输入框（否则用户还要再点一下）。
       React.useEffect(() => {
@@ -2409,13 +2442,18 @@ window.__ModuleLoader__.load({
           )
         : null;
 
-      const body = sheet
+      // ⚠ 顺序有讲究（2026-11-09 修）：**球态必须最先判断**。
+      // 之前是 `sheet` 优先，于是"打开过开间 → 切到球"时渲染的是大面板，
+      // 球上的 ref 拿不到 → 滚轮监听挂不上（用户实测："切到球，滚轮没反应"）。
+      // 顺带修掉一个潜在 bug：40px 的球里不该塞一个 cur-wide 的 iframe。
+      const body = sheet && !collapsed
         ? sheetBody
         : collapsed
         ? h(
             'button',
             {
               className: 'cur-bubble',
+              ref: bubbleRef,
               type: 'button',
               title: t('expand'),
               'aria-label': t('expand'),

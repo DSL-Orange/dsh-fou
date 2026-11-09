@@ -2089,7 +2089,7 @@ window.__ModuleLoader__.load({
         if (name === '') return '';
         return (name.length > 10 ? name.slice(0, 10) + '…' : name) + ' · ';
       })();
-      const pillLine = pillFrom + pillText;
+      const pillLine = '▸ ' + pillFrom + pillText + ' ◂';
       // 段尾的间隔：三段全角空格。少了会粘成一条，多了滚起来像卡顿。
       const pillLoop = pillLine + '　　　' + pillLine + '　　　';
 

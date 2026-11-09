@@ -181,6 +181,9 @@ window.__ModuleLoader__.load({
       // 胶囊输入态：胶囊最小时只显示这一行，所以**发给谁必须在这儿看得见**。
       // 判据（2026-11-09）：悬浮提示是"要看才有"，占位文字是"不看也在"。
       pillInputPh: '发给「{n}」…',
+      // 胶囊穿越态 / 会话列表模式（2026-11-09）
+      pillCrossHint: '点一下进入会话列表（滚轮切会话）',
+      pillScrubHint: '滚轮切会话 · 点任意位置退出',
       noSession: '没有活动会话',
       noSessionHint: '打开一个会话后，就能从这里发消息',
       noScope: '会话作用域不可用',
@@ -261,6 +264,8 @@ window.__ModuleLoader__.load({
       hint: 'Enter to send · Esc to collapse · right-click for more',
       placeholder: 'Message the current session…',
       pillInputPh: 'To "{n}"…',
+      pillCrossHint: 'Click to scrub sessions (wheel to switch)',
+      pillScrubHint: 'Wheel to switch session · click anywhere to exit',
       noSession: 'No active session',
       noSessionHint: 'Open a session and you can message it from here',
       noScope: 'Session scope unavailable',
@@ -387,6 +392,10 @@ window.__ModuleLoader__.load({
 .cur-pill-send:not(:disabled):hover{background:var(--dsw-alias-interactive-bg-hover-solid,var(--dsw-alias-interactive-bg-hover))}
 .cur-pill-go{flex:none;height:22px;min-width:22px;padding:0 4px;border:0;border-radius:11px;background:transparent;color:var(--dsw-alias-label-secondary);font:inherit;font-size:12px;line-height:1;cursor:pointer}
 .cur-pill-go:hover{background:var(--dsw-alias-interactive-bg-hover-solid,var(--dsw-alias-interactive-bg-hover))}
+/* 会话列表模式（2026-11-09）：滚轮被"接管"了 —— 必须看得出来。
+   判据：滚轮的含义由「当前模式」决定，所以模式必须**可见**。 */
+.cur-pill.is-scrub{border-color:var(--dsw-alias-state-business-primary,rgba(29,78,216,.5));background:color-mix(in srgb,var(--dsw-alias-state-business-tertiary,rgba(29,78,216,.08)) 70%,transparent)}
+.cur-pill.is-scrub .cur-pill-text{opacity:1;font-variant-numeric:tabular-nums}
 .cur-compact .cur-log{display:none}
 .cur-wide{width:min(var(--cur-wide-w,760px),calc(100vw - 16px))}
 .cur-frame{width:100%;height:min(var(--cur-wide-h,560px),var(--cur-wide-maxh,520px));border:0;border-radius:10px;background:#fff}
@@ -1035,6 +1044,11 @@ window.__ModuleLoader__.load({
         return row ? row.id : null;
       });
       const [activeTitle, setActiveTitle] = React.useState(() => titleOf(findActive(sessions)));
+      // 滚轮 handler 要读"可选会话列表""跳转函数"，
+      // 但它挂在 effect 里、闭包会过期 —— 所以用 ref 跟住最新的。
+      // （"当前在哪个会话"复用下面已有的 activeIdRef。）
+      const pickerRowsRef = React.useRef([]);
+      const pillJumpRef = React.useRef(null);
 
       const inputRef = React.useRef(null);
       // 胶囊三态（2026-11-09）：中键滚动切换 消息 / 穿越 / 输入。
@@ -1042,6 +1056,14 @@ window.__ModuleLoader__.load({
       // 判据：胶囊三态是呼机的**分时版**（呼机=上下两半同时显示；胶囊=轮流单独显示）。
       const [pillPane, setPillPane] = React.useState(readPillPane);
       const pillPaneRef = React.useRef(pillPane);
+      // 胶囊的子模式（2026-11-09 用户定）：
+      //   null       = 滚轮切三态（消息 / 穿越 / 输入）
+      //   'sessions' = 滚轮切会话（在穿越态里点一下进入，点任意位置退出）
+      //
+      // 判据：**滚轮的含义由「当前模式」决定，不由「鼠标位置」决定。**
+      //   —— 模式是可见的（列表亮着就是在切会话），位置是不可见的。
+      const [pillSub, setPillSub] = React.useState(null);
+      const pillSubRef = React.useRef(null);
       const pillWrapRef = React.useRef(null);
       const pillEditRef = React.useRef(null);
       const timerRef = React.useRef(null);
@@ -2004,6 +2026,15 @@ window.__ModuleLoader__.load({
         ? previewOf(latest.text).replace(/\n/g, ' ').slice(0, 60)
         : t('hint');
 
+      // 滚轮 handler 要读的三样东西：当前会话、可选会话列表、跳转函数。
+      // 它们每次渲染都会变（闭包会过期），所以统一灌进 ref。
+      const pillRows = pickerRows(sessions, pins, activeId, freqMap);
+      // 会话列表模式下要显示"第几个 / 共几个"。
+      const pillAt = pillRows.findIndex((row) => row.id === activeId);
+      activeIdRef.current = activeId;
+      pickerRowsRef.current = pillRows;
+      pillJumpRef.current = jumpTo;
+
       // 胶囊三态的滚轮切换（2026-11-09）。
       //
       // 为什么用 addEventListener 而不是 React 的 onWheel：
@@ -2019,8 +2050,24 @@ window.__ModuleLoader__.load({
         const onWheel = (event) => {
           // 触控板会一次抛出很多小 delta，太小就不算"滚了一格"。
           if (Math.abs(event.deltaY) < 4) return;
-          const index = PILL_PANES.indexOf(pillPaneRef.current);
           const step = event.deltaY > 0 ? 1 : -1;
+
+          // ── 子模式：会话列表 —— 滚轮切会话，滚到就跳（跟随语义）。
+          if (pillSubRef.current === 'sessions') {
+            const list = pickerRowsRef.current;
+            if (!list || list.length === 0) return;
+            const at = list.findIndex((row) => row.id === activeIdRef.current);
+            const from = at >= 0 ? at : 0;
+            const next = list[(from + step + list.length) % list.length];
+            if (!next) return;
+            event.preventDefault();
+            const go = pillJumpRef.current;
+            if (typeof go === 'function') go(next.id);
+            return;
+          }
+
+          // ── 默认：滚轮切三态。
+          const index = PILL_PANES.indexOf(pillPaneRef.current);
           const next = PILL_PANES[(index + step + PILL_PANES.length) % PILL_PANES.length];
           if (next === pillPaneRef.current) return;
           event.preventDefault();
@@ -2035,7 +2082,8 @@ window.__ModuleLoader__.load({
       // 切到输入态时，把光标放进胶囊里的输入框（否则用户还要再点一下）。
       React.useEffect(() => {
         pillPaneRef.current = pillPane;
-        if (mode !== 'pill' || pillPane !== 'input') return;
+        pillSubRef.current = pillSub;
+        if (mode !== 'pill' || pillPane !== 'input' || pillSub === 'sessions') return;
         const el = pillEditRef.current;
         if (el) {
           try {
@@ -2044,7 +2092,7 @@ window.__ModuleLoader__.load({
             /* 聚焦失败无所谓，用户点一下就行 */
           }
         }
-      }, [mode, pillPane]);
+      }, [mode, pillPane, pillSub]);
 
       // 宽面板：一个同源页面装进浮游里（今天只有验收表，将来可以是批注表/别的）。
       const sheetBody = sheet
@@ -2257,22 +2305,53 @@ window.__ModuleLoader__.load({
                 : h(
                     'button',
                     {
-                      className: 'cur-pill',
+                      className: 'cur-pill' + (pillSub === 'sessions' ? ' is-scrub' : ''),
                       type: 'button',
-                      title: pillPane === 'cross' ? activeTitle || t('noSession') : t('expand'),
+                      title:
+                        pillSub === 'sessions'
+                          ? t('pillScrubHint')
+                          : pillPane === 'cross'
+                            ? t('pillCrossHint')
+                            : t('expand'),
                       'aria-label': t('expand'),
-                      onClick: tap('bubble', expand, jumpToActive),
+                      onClick: (event) => {
+                        event.stopPropagation();
+                        // 会话列表模式：点任意位置 = 退出（滚轮交还给三态）。
+                        if (pillSub === 'sessions') {
+                          setPillSub(null);
+                          return;
+                        }
+                        // 穿越态：点一下进入会话列表模式（滚轮接管为"切会话"）。
+                        if (pillPane === 'cross') {
+                          setPillSub('sessions');
+                          return;
+                        }
+                        tap('bubble', expand, jumpToActive)(event);
+                      },
                     },
                     h('span', { className: 'cur-pill-icon', 'aria-hidden': 'true' }, '✉'),
-                    // 消息态 = 最近一条消息（现状）；穿越态 = 会话名 ▾ ↗（呼机上半的缩微）。
-                    pillPane === 'cross'
+                    // 三态的正文区：
+                    //   sessions = 会话列表模式（会话名 + 第几个/共几个）
+                    //   cross    = 穿越态（会话名 ▾）
+                    //   message  = 消息态（最近一条消息）
+                    pillSub === 'sessions'
                       ? h(
                           'span',
                           { className: 'cur-pill-text' },
-                          (activeTitle || t('noSession')) + ' ▾',
+                          (activeTitle || t('noSession')) +
+                            '  ' +
+                            (pillAt >= 0 ? pillAt + 1 : 1) +
+                            '/' +
+                            pillRows.length,
                         )
-                      : h('span', { className: 'cur-pill-text' }, pillText),
-                    pillPane === 'cross'
+                      : pillPane === 'cross'
+                        ? h(
+                            'span',
+                            { className: 'cur-pill-text' },
+                            (activeTitle || t('noSession')) + ' ▾',
+                          )
+                        : h('span', { className: 'cur-pill-text' }, pillText),
+                    pillPane === 'cross' && pillSub !== 'sessions'
                       ? h(
                           'button',
                           {

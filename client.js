@@ -2271,6 +2271,11 @@ window.__ModuleLoader__.load({
                 ? h(
                     'div',
                     { className: 'cur-pill cur-pill-edit' },
+                    // 左栏 = **应用槽位**（2026-11-09 用户："左右栏布局是要在场的"）。
+                    // 三态可以换右栏的内容，但不能换骨架 —— 骨架变了就不是"就地"了。
+                    // 现在只有浮游一个应用，所以它是纯展示；将来接了地颂，
+                    // 滚它/点它就切应用（见 §四·五 💊 胶囊双栏）。
+                    h('span', { className: 'cur-pill-icon', 'aria-hidden': 'true' }, '✉'),
                     h('input', {
                       ref: pillEditRef,
                       className: 'cur-pill-input',

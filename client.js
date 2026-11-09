@@ -381,6 +381,12 @@ window.__ModuleLoader__.load({
 .cur-pill:hover{background:var(--dsw-alias-interactive-bg-hover-solid,var(--dsw-alias-interactive-bg-hover))}
 .cur-pill-icon{flex:none;font-size:15px;opacity:.75}
 .cur-pill-text{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;opacity:.8}
+/* 横滚（2026-11-09 用户：电视新闻底部小字那种）。
+   只有放不下时才加这个类；复制一份 + translateX(-50%) = 无缝循环。 */
+.cur-pill-marquee{display:inline-block;white-space:nowrap;will-change:transform;animation:cur-marquee 16s linear infinite}
+@keyframes cur-marquee{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+/* 尊重"减少动态"偏好 —— 那是无障碍，不是叛逆。 */
+@media (prefers-reduced-motion: reduce){.cur-pill-marquee{animation:none}}
 /* 胶囊三态（2026-11-09）：零阶 = 就地。高度与 .cur-pill 一致，切态不跳。 */
 .cur-pill-edit{cursor:default;padding-right:6px;gap:6px}
 .cur-pill-edit:hover{background:color-mix(in srgb,var(--dsw-specific-input-major,var(--dsw-alias-bg-layer-1,#fff)) 88%,transparent)}
@@ -840,6 +846,47 @@ window.__ModuleLoader__.load({
     }
 
     /**
+     * 挑「简讯」—— 内容协议 L0（2026-11-09）。
+     *
+     * 为什么不是 `slice(0, 60)`：那取的是**最先出现的 60 字**，
+     * 而人说话常常先寒暄（"好的""让我看看"），真正的结论在后面。
+     * 所以要挑**最有信息量的那一句**，不是截最前面那一截。
+     *
+     * 判据（用户 2026-11-09）：**「提取」是无发言权时的做法** ——
+     * 浮游对 DSH 的消息没有发言权，所以只能启发式挑，不能要求 agent 写摘要。
+     */
+    const BRIEF_MAX = 44;
+    const BRIEF_FILLER = /^(好的|好|嗯|哦|收到|明白|了解了|没问题|让我|我看|我来|稍等|等等|稍等片刻|可以|行|对|是的|没错)/;
+
+    function pickBrief(text) {
+      const flat = previewOf(text).replace(/\s+/g, ' ').trim();
+      if (flat === '') return '';
+      // 按句末标点切；切不开就整段当一句。
+      const parts = flat
+        .split(/[。！？；\n]+/)
+        .map((s) => s.trim())
+        .filter((s) => s !== '');
+      if (parts.length === 0) return flat.slice(0, BRIEF_MAX);
+      if (parts.length === 1) {
+        return flat.length > BRIEF_MAX ? flat.slice(0, BRIEF_MAX) + '…' : flat;
+      }
+      let best = parts[0];
+      let bestScore = -Infinity;
+      for (const part of parts) {
+        // 太短没信息量（"好""可以"），太长一句读不完（横滚也只该滚一句）。
+        let score = Math.min(part.length, 36);
+        if (part.length < 6) score -= 24;
+        if (BRIEF_FILLER.test(part)) score -= 30;
+        if (/[0-9]/.test(part)) score += 4; // 有数字更具体
+        if (score > bestScore) {
+          bestScore = score;
+          best = part;
+        }
+      }
+      return best.length > BRIEF_MAX ? best.slice(0, BRIEF_MAX) + '…' : best;
+    }
+
+    /**
      * Flatten a message into readable preview text: drop the loudest markdown
      * (this log is a preview, not a renderer) and collapse blank runs.
      */
@@ -1072,6 +1119,9 @@ window.__ModuleLoader__.load({
       //   判据：滚轮适合相邻、列表适合直达 —— 只留一个，取列表。
       const [pillListOpen, setPillListOpen] = React.useState(false);
       const pillListRef = React.useRef(null);
+      // 横滚（2026-11-09）：简讯放不下才滚。用 ref 量真实宽度，别靠字数猜。
+      const pillTextRef = React.useRef(null);
+      const [pillOverflow, setPillOverflow] = React.useState(false);
       const pillWrapRef = React.useRef(null);
       const pillEditRef = React.useRef(null);
       const timerRef = React.useRef(null);
@@ -2030,9 +2080,32 @@ window.__ModuleLoader__.load({
       })();
 
       const latest = rows.length > 0 ? rows[rows.length - 1] : null;
-      const pillText = latest
-        ? previewOf(latest.text).replace(/\n/g, ' ').slice(0, 60)
-        : t('hint');
+      const pillText = latest ? pickBrief(latest.text) || t('hint') : t('hint');
+      // 简讯排版（2026-11-09 用户）：开头是**会话名**，中间只留一个「·」，
+      // 结尾留空隔 —— 这样滚起来每一段都像"一条信息"，有整体感。
+      // 会话名太长就截短：胶囊空间有限，名字只是"定位"，不是内容。
+      const pillFrom = (() => {
+        const name = String(activeTitle || '').trim();
+        if (name === '') return '';
+        return (name.length > 10 ? name.slice(0, 10) + '…' : name) + ' · ';
+      })();
+      const pillLine = pillFrom + pillText;
+      // 段尾的间隔：三段全角空格。少了会粘成一条，多了滚起来像卡顿。
+      const pillLoop = pillLine + '　　　' + pillLine + '　　　';
+
+      // 量宽决定滚不滚（2026-11-09）。字宽随字体/语言变，不靠字数猜。
+      React.useEffect(() => {
+        if (mode !== 'pill' || pillPane !== 'message') {
+          setPillOverflow(false);
+          return;
+        }
+        const el = pillTextRef.current;
+        if (!el) return;
+        // 先假设"不滚"渲染一次，再量：scrollWidth 是内容的自然宽，
+        // clientWidth 是盒子给它的宽。超 2px 才算超（四舍五入的余量）。
+        const probe = el.querySelector('.cur-pill-marquee') || el;
+        setPillOverflow(probe.scrollWidth > el.clientWidth + 2);
+      }, [mode, pillPane, pillLine]);
 
       // 滚轮 handler 要读的三样东西：当前会话、可选会话列表、跳转函数。
       // 它们每次渲染都会变（闭包会过期），所以统一灌进 ref。
@@ -2336,7 +2409,16 @@ window.__ModuleLoader__.load({
                           h('span', { className: 'cur-pill-text' }, activeTitle || t('noSession')),
                           h('span', { className: 'cur-pill-caret', 'aria-hidden': 'true' }, '▾'),
                         )
-                      : h('span', { className: 'cur-pill-text' }, pillText),
+                      : h(
+                          'span',
+                          { className: 'cur-pill-text', ref: pillTextRef },
+                          // 横滚（2026-11-09 用户：电视新闻底部小字那种）。
+                          // 只有**放不下**时才滚 —— 短简讯滚起来像出故障。
+                          // 复制两份 + translateX(-50%) = 无缝循环。
+                          pillOverflow
+                            ? h('span', { className: 'cur-pill-marquee' }, pillLoop)
+                            : pillLine,
+                        ),
                     pillPane === 'cross'
                       ? h(
                           'button',

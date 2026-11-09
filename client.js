@@ -2213,7 +2213,9 @@ window.__ModuleLoader__.load({
               h(
                 'button',
                 {
-                  className: 'cur-jump' + (logHidden ? '' : ' on'),
+                  // 不加 `.on` 高亮（用户 2026-11-09）：对话区展开与否一目了然，
+                  // 再给明暗提示就是"用 UI 命令人做他已经知道的事"（人不是猫）。
+                  className: 'cur-jump',
                   type: 'button',
                   title: t('logName') + '：' + (logHidden ? t('logHidden') : t('logShown')),
                   'aria-label': t('logName'),

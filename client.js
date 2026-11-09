@@ -437,6 +437,58 @@ window.__ModuleLoader__.load({
     // 「单条」不是第四档 —— 它是全窗里"显不显示对话区"的开关。
     const MODES = ['orb', 'pill', 'panel'];
 
+    // ─────────────────────────────────────────────────────────────
+    // 映射表（2026-11-09）：产品结构 → 技术结构
+    //
+    // ⚠ 这是**纯声明**：现在**不驱动任何代码**，只是把"五个名字各自怎么画"
+    //    从脑子里搬到代码里。行为与以前完全一致，零风险。
+    //
+    // 为什么要有它：
+    //   以前代码里有三个开关（mode / sheet / logHidden）→ 组合出 12 种状态，
+    //   其中只有 5 种有意义。每次加功能都要猜"我现在在哪一格"。
+    //   这张表是"12 格压成 5 个名字"的第一步 —— 但**只是第一步**：
+    //   让它驱动渲染，是另一次重构（判据：等它挡住你，见
+    //   DSH知识库/产品调研/2026-11-09-映射表-技术结构与产品结构.md §四）。
+    //
+    // 字段：
+    //   dom     —— 用哪个盒子（对应 CSS 类）
+    //   mods    —— 在盒子上再加哪些修饰类
+    //   content —— 里面装什么：none / pillPanes（会话三态）/ session（对话区）/ sheet（开间）
+    //   product —— 它在产品结构图里叫什么（方便对照那张纸）
+    // ─────────────────────────────────────────────────────────────
+    const SURFACES = {
+      orb: {
+        dom: 'cur-bubble',
+        mods: [],
+        content: 'none',
+        product: '球',
+      },
+      pill: {
+        dom: 'cur-pill-wrap',
+        mods: [],
+        content: 'pillPanes',
+        product: '胶囊',
+      },
+      pager: {
+        dom: 'cur-panel',
+        mods: ['cur-compact'],
+        content: 'session',
+        product: '呼机',
+      },
+      window: {
+        dom: 'cur-panel',
+        mods: [],
+        content: 'session',
+        product: '全窗',
+      },
+      pane: {
+        dom: 'cur-panel',
+        mods: ['cur-wide'],
+        content: 'sheet',
+        product: '开间',
+      },
+    };
+
     /** 待飞区落在记事本的哪个文件（记事本用真实 .md 存笔记）。 */
     const PARK_FILE = '待飞区.md';
 

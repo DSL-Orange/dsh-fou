@@ -178,6 +178,9 @@ window.__ModuleLoader__.load({
       sent: '已入队 ✓',
       hint: 'Enter 发送 · Esc 收起 · 右键更多',
       placeholder: '给当前会话发一条消息…',
+      // 胶囊输入态：胶囊最小时只显示这一行，所以**发给谁必须在这儿看得见**。
+      // 判据（2026-11-09）：悬浮提示是"要看才有"，占位文字是"不看也在"。
+      pillInputPh: '发给「{n}」…',
       noSession: '没有活动会话',
       noSessionHint: '打开一个会话后，就能从这里发消息',
       noScope: '会话作用域不可用',
@@ -257,6 +260,7 @@ window.__ModuleLoader__.load({
       sent: 'Queued ✓',
       hint: 'Enter to send · Esc to collapse · right-click for more',
       placeholder: 'Message the current session…',
+      pillInputPh: 'To "{n}"…',
       noSession: 'No active session',
       noSessionHint: 'Open a session and you can message it from here',
       noScope: 'Session scope unavailable',
@@ -372,6 +376,17 @@ window.__ModuleLoader__.load({
 .cur-pill:hover{background:var(--dsw-alias-interactive-bg-hover-solid,var(--dsw-alias-interactive-bg-hover))}
 .cur-pill-icon{flex:none;font-size:15px;opacity:.75}
 .cur-pill-text{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;opacity:.8}
+/* 胶囊三态（2026-11-09）：零阶 = 就地。高度与 .cur-pill 一致，切态不跳。 */
+.cur-pill-edit{cursor:default;padding-right:6px;gap:6px}
+.cur-pill-edit:hover{background:color-mix(in srgb,var(--dsw-specific-input-major,var(--dsw-alias-bg-layer-1,#fff)) 88%,transparent)}
+.cur-pill-input{flex:1;min-width:0;height:100%;border:0;outline:0;background:transparent;color:var(--dsw-alias-label-primary);font:inherit;font-size:12px;line-height:1;padding:0}
+.cur-pill-input::placeholder{color:var(--dsw-alias-label-tertiary)}
+.cur-pill-input:disabled{opacity:.6}
+.cur-pill-send{flex:none;height:30px;min-width:30px;padding:0 8px;border:.5px solid var(--dsw-alias-border-l2);border-radius:15px;background:var(--dsw-alias-bg-layer-1,#fff);color:var(--dsw-alias-label-primary);font:inherit;font-size:12px;line-height:1;cursor:pointer}
+.cur-pill-send:disabled{opacity:.45;cursor:default}
+.cur-pill-send:not(:disabled):hover{background:var(--dsw-alias-interactive-bg-hover-solid,var(--dsw-alias-interactive-bg-hover))}
+.cur-pill-go{flex:none;height:22px;min-width:22px;padding:0 4px;border:0;border-radius:11px;background:transparent;color:var(--dsw-alias-label-secondary);font:inherit;font-size:12px;line-height:1;cursor:pointer}
+.cur-pill-go:hover{background:var(--dsw-alias-interactive-bg-hover-solid,var(--dsw-alias-interactive-bg-hover))}
 .cur-compact .cur-log{display:none}
 .cur-wide{width:min(var(--cur-wide-w,760px),calc(100vw - 16px))}
 .cur-frame{width:100%;height:min(var(--cur-wide-h,560px),var(--cur-wide-maxh,520px));border:0;border-radius:10px;background:#fff}
@@ -416,6 +431,30 @@ window.__ModuleLoader__.load({
     }
 
     const LOG_KEY = 'fou.bar.loghidden.v1';
+
+    // 胶囊三态（2026-11-09）：中键滚轮切换。
+    //   message = 最近一条消息（现状）
+    //   cross   = 会话名 ▾ ↗（呼机上半的缩微）
+    //   input   = 输入框 + 发送（呼机下半的缩微）
+    const PILL_PANES = ['message', 'cross', 'input'];
+    const PILL_PANE_KEY = 'fou.pill.pane.v1';
+
+    function readPillPane() {
+      try {
+        const raw = window.localStorage.getItem(PILL_PANE_KEY);
+        return PILL_PANES.indexOf(raw) >= 0 ? raw : 'message';
+      } catch (error) {
+        return 'message';
+      }
+    }
+
+    function savePillPane(pane) {
+      try {
+        window.localStorage.setItem(PILL_PANE_KEY, pane);
+      } catch (error) {
+        /* storage unavailable */
+      }
+    }
 
     function readLogHidden() {
       try {
@@ -998,6 +1037,13 @@ window.__ModuleLoader__.load({
       const [activeTitle, setActiveTitle] = React.useState(() => titleOf(findActive(sessions)));
 
       const inputRef = React.useRef(null);
+      // 胶囊三态（2026-11-09）：中键滚动切换 消息 / 穿越 / 输入。
+      // 零阶 = 就地 —— 不改变形态，在胶囊里完成呼机的功能。
+      // 判据：胶囊三态是呼机的**分时版**（呼机=上下两半同时显示；胶囊=轮流单独显示）。
+      const [pillPane, setPillPane] = React.useState(readPillPane);
+      const pillPaneRef = React.useRef(pillPane);
+      const pillWrapRef = React.useRef(null);
+      const pillEditRef = React.useRef(null);
       const timerRef = React.useRef(null);
       const mountedRef = React.useRef(true);
       const inflightRef = React.useRef(new Set());
@@ -1958,6 +2004,48 @@ window.__ModuleLoader__.load({
         ? previewOf(latest.text).replace(/\n/g, ' ').slice(0, 60)
         : t('hint');
 
+      // 胶囊三态的滚轮切换（2026-11-09）。
+      //
+      // 为什么用 addEventListener 而不是 React 的 onWheel：
+      //   React 给 wheel 挂的是**被动**监听，`preventDefault()` 会被忽略 ——
+      //   那样滚胶囊等于滚底下的页面。要挡住，必须 { passive: false }。
+      //
+      // 判据（用户 2026-11-09）：**零阶 = 就地。** 滚轮换的是"胶囊里装哪一块"，
+      // 不改变形态、不移动位置 —— 这就是它和左键运动（迁移）的分野。
+      React.useEffect(() => {
+        if (mode !== 'pill') return undefined;
+        const el = pillWrapRef.current;
+        if (!el) return undefined;
+        const onWheel = (event) => {
+          // 触控板会一次抛出很多小 delta，太小就不算"滚了一格"。
+          if (Math.abs(event.deltaY) < 4) return;
+          const index = PILL_PANES.indexOf(pillPaneRef.current);
+          const step = event.deltaY > 0 ? 1 : -1;
+          const next = PILL_PANES[(index + step + PILL_PANES.length) % PILL_PANES.length];
+          if (next === pillPaneRef.current) return;
+          event.preventDefault();
+          pillPaneRef.current = next;
+          setPillPane(next);
+          savePillPane(next);
+        };
+        el.addEventListener('wheel', onWheel, { passive: false });
+        return () => el.removeEventListener('wheel', onWheel);
+      }, [mode]);
+
+      // 切到输入态时，把光标放进胶囊里的输入框（否则用户还要再点一下）。
+      React.useEffect(() => {
+        pillPaneRef.current = pillPane;
+        if (mode !== 'pill' || pillPane !== 'input') return;
+        const el = pillEditRef.current;
+        if (el) {
+          try {
+            el.focus();
+          } catch (error) {
+            /* 聚焦失败无所谓，用户点一下就行 */
+          }
+        }
+      }, [mode, pillPane]);
+
       // 宽面板：一个同源页面装进浮游里（今天只有验收表，将来可以是批注表/别的）。
       const sheetBody = sheet
         ? h(
@@ -2131,19 +2219,76 @@ window.__ModuleLoader__.load({
         : mode === 'pill'
           ? h(
               'div',
-              { className: 'cur-pill-wrap' },
-              h(
-                'button',
-                {
-                  className: 'cur-pill',
-                  type: 'button',
-                  title: t('expand'),
-                  'aria-label': t('expand'),
-                  onClick: tap('bubble', expand, jumpToActive),
-                },
-                h('span', { className: 'cur-pill-icon', 'aria-hidden': 'true' }, '✉'),
-                h('span', { className: 'cur-pill-text' }, pillText),
-              ),
+              { className: 'cur-pill-wrap', ref: pillWrapRef, 'data-pane': pillPane },
+              // 输入态：胶囊直接变成一条输入框（呼机下半的缩微）。
+              // 这里必须是 div 而不是 button —— **button 里不能放 input**。
+              pillPane === 'input'
+                ? h(
+                    'div',
+                    { className: 'cur-pill cur-pill-edit' },
+                    h('input', {
+                      ref: pillEditRef,
+                      className: 'cur-pill-input',
+                      type: 'text',
+                      value: draft,
+                      disabled: !activeId,
+                      placeholder: activeId
+                        ? t('pillInputPh').replace('{n}', activeTitle || t('noSession'))
+                        : t('noSession'),
+                      title: activeTitle || '',
+                      'aria-label': t('brand'),
+                      spellCheck: false,
+                      autoComplete: 'off',
+                      onChange: (event) => setDraft(event.target.value),
+                      onKeyDown: onKeyDown,
+                    }),
+                    h(
+                      'button',
+                      {
+                        className: 'cur-pill-send',
+                        type: 'button',
+                        disabled: !canSend,
+                        title: t('send'),
+                        onClick: () => void submit(),
+                      },
+                      busy ? t('sendingShort') : '↵',
+                    ),
+                  )
+                : h(
+                    'button',
+                    {
+                      className: 'cur-pill',
+                      type: 'button',
+                      title: pillPane === 'cross' ? activeTitle || t('noSession') : t('expand'),
+                      'aria-label': t('expand'),
+                      onClick: tap('bubble', expand, jumpToActive),
+                    },
+                    h('span', { className: 'cur-pill-icon', 'aria-hidden': 'true' }, '✉'),
+                    // 消息态 = 最近一条消息（现状）；穿越态 = 会话名 ▾ ↗（呼机上半的缩微）。
+                    pillPane === 'cross'
+                      ? h(
+                          'span',
+                          { className: 'cur-pill-text' },
+                          (activeTitle || t('noSession')) + ' ▾',
+                        )
+                      : h('span', { className: 'cur-pill-text' }, pillText),
+                    pillPane === 'cross'
+                      ? h(
+                          'button',
+                          {
+                            className: 'cur-pill-go',
+                            type: 'button',
+                            title: t('jumpHint'),
+                            'aria-label': t('jumpHint'),
+                            onClick: (event) => {
+                              event.stopPropagation();
+                              jumpToActive();
+                            },
+                          },
+                          '↗',
+                        )
+                      : null,
+                  ),
               h('div', {
                 className: 'cur-grip',
                 title: t('resizeHint'),

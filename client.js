@@ -184,6 +184,7 @@ window.__ModuleLoader__.load({
       // 胶囊穿越态 / 会话列表模式（2026-11-09）
       pillCrossHint: '点一下进入会话列表（滚轮切会话）',
       pillListHint: '展开会话列表（直接选）',
+      pillSlotHint: '切换应用（点一下换下一个）',
       noSession: '没有活动会话',
       noSessionHint: '打开一个会话后，就能从这里发消息',
       noScope: '会话作用域不可用',
@@ -266,6 +267,7 @@ window.__ModuleLoader__.load({
       pillInputPh: 'To "{n}"…',
       pillCrossHint: 'Click to scrub sessions (wheel to switch)',
       pillListHint: 'Open session list (pick directly)',
+      pillSlotHint: 'Switch app (click to cycle)',
       noSession: 'No active session',
       noSessionHint: 'Open a session and you can message it from here',
       noScope: 'Session scope unavailable',
@@ -380,6 +382,9 @@ window.__ModuleLoader__.load({
 .cur-pill{position:relative;box-sizing:border-box;display:flex;align-items:center;gap:8px;height:44px;min-height:44px;max-height:44px;max-width:none;width:min(var(--cur-pill-w,320px),calc(100vw - 16px));padding:0 14px;border:.5px solid var(--dsw-alias-border-l2);border-radius:22px;background:color-mix(in srgb,var(--dsw-specific-input-major,var(--dsw-alias-bg-layer-1,#fff)) 88%,transparent);backdrop-filter:blur(14px);box-shadow:0 8px 24px #00000026;color:var(--dsw-alias-label-primary);font:inherit;font-size:12px;line-height:1;cursor:pointer}
 .cur-pill:hover{background:var(--dsw-alias-interactive-bg-hover-solid,var(--dsw-alias-interactive-bg-hover))}
 .cur-pill-icon{flex:none;font-size:15px;opacity:.75}
+/* 左栏 = 应用槽位（2026-11-09 第一步：接单形态地颂）。可点，不加边框 —— 它是一栏，不是一个按钮。 */
+.cur-pill-slot{border:0;background:transparent;padding:0 2px;border-radius:8px;font:inherit;font-size:15px;line-height:1;color:inherit;cursor:pointer;opacity:.85}
+.cur-pill-slot:hover{background:var(--dsw-alias-interactive-bg-hover-solid,var(--dsw-alias-interactive-bg-hover));opacity:1}
 .cur-pill-text{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;opacity:.8}
 /* 横滚（2026-11-09 用户：电视新闻底部小字那种）。
    只有放不下时才加这个类；复制一份 + translateX(-50%) = 无缝循环。 */
@@ -969,6 +974,10 @@ window.__ModuleLoader__.load({
         icon: typeof entry.icon === 'string' ? entry.icon : '',
         run: typeof entry.run === 'function' ? entry.run : null,
         mount: typeof entry.mount === 'function' ? entry.mount : null,
+        // 简讯（2026-11-09）：插件可以报一条"当前状态"，浮游的胶囊左栏能显示它。
+        // 返回 { icon, text } 或 null（null = 此刻没什么可报）。
+        // 这是"应用槽位"的第一个用途 —— 胶囊从左栏 `✉` 切到插件自己的图标。
+        brief: typeof entry.brief === 'function' ? entry.brief : null,
       };
       const index = dockEntries.findIndex((item) => item.id === id);
       if (index >= 0) dockEntries[index] = record;
@@ -1119,6 +1128,11 @@ window.__ModuleLoader__.load({
       //   判据：滚轮适合相邻、列表适合直达 —— 只留一个，取列表。
       const [pillListOpen, setPillListOpen] = React.useState(false);
       const pillListRef = React.useRef(null);
+      // 左栏 = 应用槽位（2026-11-09 第一步：接单形态地颂）。
+      // pillApp = null 表示"浮游自己"；否则是某个坞条目的 id（如 'song.dock'）。
+      // 切换只用**点击左栏**，不用滚轮 —— 滚轮已经归三态了，不能再分一个含义。
+      const [pillApp, setPillApp] = React.useState(null);
+      const [pillAppTick, setPillAppTick] = React.useState(0);
       // 横滚（2026-11-09）：简讯放不下才滚。用 ref 量真实宽度，别靠字数猜。
       const pillTextRef = React.useRef(null);
       const [pillOverflow, setPillOverflow] = React.useState(false);
@@ -2093,6 +2107,29 @@ window.__ModuleLoader__.load({
       // 段尾的间隔：三段全角空格。少了会粘成一条，多了滚起来像卡顿。
       const pillLoop = pillLine + '　　　' + pillLine + '　　　';
 
+      // ── 应用槽位（2026-11-09 第一步：接单形态地颂）
+      // 只认"报了 brief 的坞条目"：没有 brief 的插件没有"当前状态"可显示，
+      // 不参与切换（否则点了会切到空白）。切换只用点击左栏，不用滚轮。
+      const pillApps = dockEntries.filter((entry) => entry && entry.brief);
+      const pillAppEntry = pillApp ? pillApps.find((entry) => entry.id === pillApp) || null : null;
+      let pillAppBrief = null;
+      if (pillAppEntry) {
+        try {
+          pillAppBrief = pillAppEntry.brief();
+        } catch (error) {
+          pillAppBrief = null;
+        }
+      }
+      const pillAppIcon = pillAppEntry ? pillAppEntry.icon || '●' : '✉';
+      // 停在插件应用上时，每 2 秒重渲染一次 —— 歌曲名会变，不刷新就一直是旧的。
+      // ⚠ tick 不能进 deps：那会让 effect 每 2 秒重建一次 interval，越堆越多。
+      const pillAppId = pillAppEntry ? pillAppEntry.id : null;
+      React.useEffect(() => {
+        if (!pillAppId || mode !== 'pill') return undefined;
+        const timer = window.setInterval(() => setPillAppTick((n) => n + 1), 2000);
+        return () => window.clearInterval(timer);
+      }, [pillAppId, mode]);
+
       // 量宽决定滚不滚（2026-11-09）。字宽随字体/语言变，不靠字数猜。
       React.useEffect(() => {
         if (mode !== 'pill' || pillPane !== 'message') {
@@ -2386,14 +2423,49 @@ window.__ModuleLoader__.load({
                       'aria-label': t('expand'),
                       onClick: (event) => {
                         event.stopPropagation();
+                        // 停在插件应用上时，点胶囊 = 调它的 run（地颂 = 播放/暂停）。
+                        // 这是"遥控"的自然延伸：应用槽位显示它的状态，点一下就操作它。
+                        if (pillAppEntry) {
+                          const run = pillAppEntry.run;
+                          if (typeof run === 'function') run();
+                          return;
+                        }
                         tap('bubble', expand, jumpToActive)(event);
                       },
                     },
-                    h('span', { className: 'cur-pill-icon', 'aria-hidden': 'true' }, '✉'),
-                    // 正文区（2026-11-09 用户图二：会话名要有一个**框**）：
-                    //   cross    = 穿越态 —— 框里是会话名，点整块弹列表，▾ 是它的视觉暗示
-                    //   message  = 消息态 —— 最近一条消息，无框
-                    pillPane === 'cross'
+                    // 左栏 = 应用槽位。点它就在"浮游自己"和"报了 brief 的插件"之间轮转。
+                    // ⚠ 不用滚轮 —— 滚轮已经归三态了。
+                    pillApps.length > 0
+                      ? h(
+                          'button',
+                          {
+                            className: 'cur-pill-icon cur-pill-slot',
+                            type: 'button',
+                            title: t('pillSlotHint'),
+                            'aria-label': t('pillSlotHint'),
+                            onClick: (event) => {
+                              event.stopPropagation();
+                              const order = [null, ...pillApps.map((entry) => entry.id)];
+                              const at = order.indexOf(pillApp);
+                              const next = order[(at + 1) % order.length];
+                              setPillApp(next);
+                              setPillAppTick((n) => n + 1);
+                            },
+                          },
+                          pillAppIcon,
+                        )
+                      : h('span', { className: 'cur-pill-icon', 'aria-hidden': 'true' }, '✉'),
+                    // 正文区（2026-11-09）：
+                    //   app      = 插件应用 —— 显示它的 brief（如歌名）
+                    //   cross    = 穿越态 —— 会话名框，点整块弹列表
+                    //   message  = 消息态 —— 最近的简讯
+                    pillAppEntry
+                      ? h(
+                          'span',
+                          { className: 'cur-pill-text' },
+                          pillAppBrief && pillAppBrief.text ? pillAppBrief.text : t('noSession'),
+                        )
+                      : pillPane === 'cross'
                       ? h(
                           'span',
                           {

@@ -1071,6 +1071,7 @@ window.__ModuleLoader__.load({
       //   选会话 = 点框弹列表 → 点一下直达。
       //   判据：滚轮适合相邻、列表适合直达 —— 只留一个，取列表。
       const [pillListOpen, setPillListOpen] = React.useState(false);
+      const pillListRef = React.useRef(null);
       const pillWrapRef = React.useRef(null);
       const pillEditRef = React.useRef(null);
       const timerRef = React.useRef(null);
@@ -2053,6 +2054,11 @@ window.__ModuleLoader__.load({
         const el = pillWrapRef.current;
         if (!el) return undefined;
         const onWheel = (event) => {
+          // 列表浮层自己会滚 —— 在它的范围内**不劫持**滚轮。
+          // 判据：任何"浮在上面"的可滚动区域，必须在它自己的范围内接管滚轮。
+          // （否则滚列表 = 滚胶囊，列表永远滚不动。）
+          const list = pillListRef.current;
+          if (list && event.target instanceof Node && list.contains(event.target)) return;
           // 触控板会一次抛出很多小 delta，太小就不算"滚了一格"。
           if (Math.abs(event.deltaY) < 4) return;
           const step = event.deltaY > 0 ? 1 : -1;
@@ -2357,7 +2363,7 @@ window.__ModuleLoader__.load({
               pillListOpen && pillPane === 'cross'
                 ? h(
                     'div',
-                    { className: 'cur-pill-list', role: 'listbox' },
+                    { className: 'cur-pill-list', role: 'listbox', ref: pillListRef },
                     pillRows.length === 0
                       ? h('div', { className: 'cur-pill-list-empty' }, t('noSession'))
                       : pillRows.map((row) =>

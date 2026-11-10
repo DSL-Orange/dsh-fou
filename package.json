@@ -1,7 +1,7 @@
 {
   "name": "@local/dsh-fou",
   "version": "0.2.0",
-  "private": true,
+  "private": false,
   "type": "module",
   "description": "A floating container layer over DSH: chat without leaving the page, travel between sessions, and open anything — a web page, a file, or a plugin's own UI — in one pane. · 浮游：DSH 之上的一层悬浮容器 —— 不离开当前位置，就能碰到别处。",
   "exports": {
@@ -18,7 +18,10 @@
     "view.html",
     "cordis.patch.yml",
     "locale/*.json",
-    "README.md"
+    "README.md",
+    "LICENSE",
+    "docs/",
+    "skill/"
   ],
   "dependencies": {},
   "peerDependencies": {

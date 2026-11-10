@@ -1,5 +1,5 @@
 /**
- * @local/dsh-fou · 宿主半（v0：只有验收表）
+ * dsh-fou · 宿主半（v0：只有验收表）
  *
  * 为什么需要宿主半：验收表是交互页面，如果从本地文件（file://）打开，它发不出
  * 任何请求（跨源被拦），结果只能靠"复制粘贴"带出来。所以由宿主同源提供页面，
@@ -522,7 +522,7 @@ async function saveResult(outDir, result) {
 
 // ---------------------------------------------------------------- plugin
 
-export const name = '@local/dsh-fou'
+export const name = 'dsh-fou'
 
 /** 所有路由都走这里，且任何异常都不让它冒到启动流程。
  *

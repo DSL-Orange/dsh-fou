@@ -1,5 +1,5 @@
 {
-  "name": "@local/dsh-fou",
+  "name": "dsh-fou",
   "version": "0.2.0",
   "private": false,
   "type": "module",

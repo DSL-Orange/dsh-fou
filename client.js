@@ -19,7 +19,7 @@
  * not release it, which is exactly what makes this bar useful there.
  */
 window.__ModuleLoader__.load({
-  id: '@local/dsh-fou',
+  id: 'dsh-fou',
   factory(require) {
     const React = require('react');
     const h = React.createElement;

@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>设置 · 浮游</title>
+<style>
+  /* ── 设置页（2026-11-10 用户第 1 条）
+     原来点 ⚙ 弹的是"右键页"（一个菜单），这是错的：
+       · 菜单是"动作列表"，设置是"一组当前值"。
+       · 动作点完就消失；设置要**显示现在的状态**。
+     判据：**菜单回答"能做什么"，设置页回答"现在是什么"。**
+
+     用户自己也说了："尽管它现在会很空旷。"
+     —— 空旷是对的：设置项少，说明浮游自己该做的决定少。
+  */
+  :root {
+    --ink: #1f2937;
+    --dim: #6b7280;
+    --line: #e5e7eb;
+    --card: #fff;
+    --accent: #2563eb;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    font: 13px/1.6 -apple-system, "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+    color: var(--ink);
+    background: linear-gradient(180deg, #fbfbfc 0%, #f7f8fa 100%);
+    overflow: auto;
+  }
+
+  header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 14px 8px;
+    border-bottom: 1px solid var(--line);
+    background: rgba(255, 255, 255, .7);
+    backdrop-filter: blur(8px);
+    position: sticky;
+    top: 0;
+    z-index: 2;
+  }
+  header .title { font-weight: 600; font-size: 13px; }
+  header .grow { flex: 1; }
+  header .hint { color: var(--dim); font-size: 11px; }
+
+  main { padding: 14px; display: flex; flex-direction: column; gap: 14px; }
+
+  .sec {
+    background: var(--card);
+    border-radius: 12px;
+    box-shadow: 0 1px 2px #0000000a, 0 4px 14px #0000000d;
+    overflow: hidden;
+  }
+  .sec > .label {
+    padding: 9px 14px 4px;
+    color: var(--dim);
+    font-size: 11px;
+    letter-spacing: .04em;
+  }
+  .row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    border-top: 1px solid #f1f3f6;
+  }
+  .row:first-of-type { border-top: 0; }
+  .row .name { flex: 1; }
+  .row .desc { color: var(--dim); font-size: 11px; }
+
+  /* 三选一：形态 */
+  .choice { display: flex; gap: 6px; }
+  .choice button {
+    border: 1px solid var(--line);
+    background: #fff;
+    color: var(--ink);
+    border-radius: 8px;
+    padding: 5px 12px;
+    font: inherit;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all .12s ease;
+  }
+  .choice button:hover { border-color: #c7cfda; }
+  .choice button.on {
+    border-color: var(--accent);
+    color: var(--accent);
+    background: #eff4ff;
+    font-weight: 600;
+  }
+
+  /* 动作按钮 */
+  .act {
+    border: 1px solid var(--line);
+    background: #fff;
+    border-radius: 8px;
+    padding: 5px 12px;
+    font: inherit;
+    font-size: 12px;
+    cursor: pointer;
+    color: var(--ink);
+  }
+  .act:hover { background: #f7f8fa; border-color: #c7cfda; }
+
+  /* 说明 */
+  .foot {
+    color: #b6bcc6;
+    font-size: 11px;
+    text-align: center;
+    padding: 6px 0 20px;
+    line-height: 1.8;
+  }
+  .foot code { background: #eef1f5; padding: 1px 5px; border-radius: 4px; color: #4b5563; }
+</style>
+</head>
+<body>
+<header>
+  <span class="title">设置</span>
+  <span class="grow"></span>
+  <span class="hint" id="hint"></span>
+</header>
+
+<main>
+  <!-- 位置 -->
+  <div class="sec">
+    <div class="label">位置</div>
+    <div class="row">
+      <span class="name">把它送回原处
+        <div class="desc">拖动过后忘了在哪，点这个</div>
+      </span>
+      <button class="act" data-act="reset">复位位置</button>
+    </div>
+  </div>
+
+  <div class="foot" id="foot">
+    这里只剩一件事 —— 因为它别处做不到。<br>
+    形态在胶囊上滚一下就有，收起就是切到球。
+  </div>
+</main>
+
+<script>
+(function () {
+  'use strict';
+
+  function tell(action, extra) {
+    var msg = { type: 'fou:setting', action: action };
+    if (extra) for (var k in extra) msg[k] = extra[k];
+    try { window.parent.postMessage(msg, window.location.origin); } catch (e) { /* 不在浮游里 */ }
+  }
+
+  // 当前形态从 URL 来：?mode=orb|pill|panel
+  function currentMode() {
+    try { return new URLSearchParams(location.search).get('mode') || ''; } catch (e) { return ''; }
+  }
+
+  function paintMode() {
+    var cur = currentMode();
+    var btns = document.querySelectorAll('#modeChoice button');
+    for (var i = 0; i < btns.length; i++) {
+      var on = btns[i].dataset.mode === cur;
+      btns[i].classList.toggle('on', on);
+    }
+    document.getElementById('hint').textContent = cur ? '' : '点一下就换';
+  }
+
+  document.addEventListener('click', function (event) {
+    var el = event.target;
+    var btn = null;
+    while (el && el !== document.body) {
+      if (el.tagName === 'BUTTON') { btn = el; break; }
+      el = el.parentNode;
+    }
+    if (!btn) return;
+    if (btn.dataset.mode) { tell('mode', { value: btn.dataset.mode }); return; }
+    if (btn.dataset.act) { tell(btn.dataset.act); return; }
+  });
+
+  paintMode();
+})();
+</script>
+</body>
+</html>

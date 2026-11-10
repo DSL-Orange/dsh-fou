@@ -186,7 +186,9 @@ window.__ModuleLoader__.load({
       pillListHint: '展开会话列表（直接选）',
       pillSlotHint: '切换应用（点一下换下一个）',
       firstRunHint: '滚轮切功能 · Shift+滚轮切应用 · 右键开间 · 对会话说「给我一份 checklist」',
-      deskTitle: '桌面',
+      deskTitle: '桌布',
+      settingsTitle: '设置',
+      addNoSession: '先开一个会话，我才好替你说话',
       noSession: '没有活动会话',
       noSessionHint: '打开一个会话后，就能从这里发消息',
       noScope: '会话作用域不可用',
@@ -271,7 +273,9 @@ window.__ModuleLoader__.load({
       pillListHint: 'Open session list (pick directly)',
       pillSlotHint: 'Switch app (click to cycle)',
       firstRunHint: 'Scroll to switch pane · Shift+scroll to switch app · Right-click for the pane · Say "give me a checklist"',
-      deskTitle: 'Desk',
+      deskTitle: 'Tablecloth',
+      settingsTitle: 'Settings',
+      addNoSession: 'Open a session first, then I can speak for you',
       noSession: 'No active session',
       noSessionHint: 'Open a session and you can message it from here',
       noScope: 'Session scope unavailable',
@@ -1310,6 +1314,16 @@ window.__ModuleLoader__.load({
       };
       deskOpenRef.current = openDesk;
 
+      // 设置页（2026-11-10 用户第 1 条）：点 ⚙ 打开一**页**，不是一个菜单。
+      // 判据：**菜单回答"能做什么"，设置页回答"现在是什么"。**
+      const openSettings = () => {
+        setRecentOpen(false);
+        setMenuTab(null);
+        setMenu(null);
+        setSheet({ url: '/dsh-fou/settings.html?mode=' + encodeURIComponent(mode), title: t('settingsTitle') });
+        setMode('panel');
+      };
+
       // 把"打开这个 url"的能力交给 factory 里的链接右键处理器（它活在 React 之外）。
       // 挂载时注册，卸载时撤销；同时把"坞还没出来时收到的请求"补开一次。
       React.useEffect(() => {
@@ -2006,6 +2020,29 @@ window.__ModuleLoader__.load({
             return;
           }
 
+          // 「设置页动了一下」（2026-11-10 用户第 1 条）：设置页是 iframe，
+          // 它只负责"显示当前值 + 报动作"，真正的改动在这里做。
+          if (data.type === 'fou:setting') {
+            const action = typeof data.action === 'string' ? data.action : '';
+            if (action === 'mode') {
+              const next = typeof data.value === 'string' ? data.value : '';
+              if (next === 'orb' || next === 'pill' || next === 'panel') {
+                setMode(next);
+                saveMode(next);
+              }
+              return;
+            }
+            if (action === 'reset') {
+              resetPos();
+              return;
+            }
+            if (action === 'collapse') {
+              collapse();
+              return;
+            }
+            return;
+          }
+
           // 「桌面点了一个图标」（2026-11-10）：桌面是 iframe，它只负责"被点"，
           // 真正的动作在这里执行 —— 因为它要动浮游自己的状态（形态 / 开间）。
           //
@@ -2043,8 +2080,27 @@ window.__ModuleLoader__.load({
               return;
             }
             if (action === 'setting') {
-              setMenuTab('setting');
-              setMenu({ x: 24, y: 24 });
+              openSettings();
+              return;
+            }
+            // ➕ 挂载插件（2026-11-10 用户第 3 条）：
+            // **不写一句"你可以这样做"，而是**替他说出口**。
+            // 桌布上点 ➕ → 浮游给当前会话发一条消息 → agent 收到就去做。
+            // 判据：文字的引导要求用户自己做一步；界面的引导是替他把那步做了。
+            if (action === 'addPlugin') {
+              const id = activeIdRef.current;
+              if (!id) {
+                setFailure(t('addNoSession'));
+                setMode('panel');
+                return;
+              }
+              const say = notifyRef.current;
+              if (typeof say === 'function') {
+                void say(
+                  id,
+                  '浮游的桌布上还空着一个位置。帮我把插件挂上去 —— 先读 skill `fou-mount`，再按里面的模板接一个。'
+                );
+              }
               return;
             }
             return;

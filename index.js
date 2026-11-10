@@ -24,6 +24,7 @@ const ROUTES = {
   panels: '/dsh-fou/panels',
   panelsPage: '/dsh-fou/panels.html',
   deskPage: '/dsh-fou/desk.html',
+  settingsPage: '/dsh-fou/settings.html',
   panel: '/dsh-fou/panel',
   hang: '/dsh-fou/hang',
   editor: '/dsh-fou/editor.html',
@@ -43,6 +44,7 @@ const HERE = dirname(fileURLToPath(import.meta.url))
 const TABLE_FILE = join(HERE, 'accept.html')
 const PANELS_FILE = join(HERE, 'panels.html')
 const DESK_FILE = join(HERE, 'desk.html')
+const SETTINGS_FILE = join(HERE, 'settings.html')
 const EDITOR_FILE = join(HERE, 'editor.html')
 const VIEW_FILE = join(HERE, 'view.html')
 const DRAFT_DIR_NAME = '_草稿'
@@ -685,6 +687,22 @@ export function apply(ctx, config) {
             sendHTML(res, 200, await readFile(DESK_FILE, 'utf8'))
           } catch (error) {
             sendHTML(res, 500, '<h1>桌面页缺失</h1><p>' + DESK_FILE + '</p>')
+          }
+        },
+      ],
+      [
+        // 设置页（2026-11-10 用户第 1 条）：点 ⚙ 打开的是"一页"，不是"一个菜单"。
+        // 判据：菜单回答"能做什么"，设置页回答"现在是什么"。
+        ROUTES.settingsPage,
+        async (req, res) => {
+          if (req.method !== 'GET') {
+            sendJSON(res, 405, { error: '只支持 GET' })
+            return
+          }
+          try {
+            sendHTML(res, 200, await readFile(SETTINGS_FILE, 'utf8'))
+          } catch (error) {
+            sendHTML(res, 500, '<h1>设置页缺失</h1><p>' + SETTINGS_FILE + '</p>')
           }
         },
       ],

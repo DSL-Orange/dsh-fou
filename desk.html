@@ -3,14 +3,16 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>桌面 · 浮游</title>
+<title>桌布 · 浮游</title>
 <style>
   /* ── 白布 ──────────────────────────────────────────────
-     2026-11-10 用户："右键打开一个桌面。" / "一块白布，如 Windows 桌面"。
+     2026-11-10 用户："右键打开一个桌面。" → 后改名「桌布」：
+     "截至目前 它是铺在 DSH 上的。即使以后独立了，它也要铺在 Windows 上。"
+     —— 所以「桌布」不是"桌面"，它是**一层布**，盖在别的东西上。
      这一页**不是菜单**，是**摊开的菜单**：原来右键里藏的东西，全摆在这儿。
 
      三条判据（用户定的）：
-       ① 空白本身是内容 —— 桌面不填满，留白就是"还能放"。
+       ① 空白本身是内容 —— 桌布不填满，留白就是"还能放"。
        ② 图标是可点的，不是文字说明 —— 点一下比读一句快。
        ③ 分组靠间距，不靠标题 —— 用户："我们用设计做说明。"
   */
@@ -102,6 +104,20 @@
     white-space: nowrap;
   }
 
+  /* ➕ 磁贴：虚线边 —— 它不是一个东西，是一个位置（"还能放"的那个口子） */
+  .tile-add {
+    background: transparent;
+    border: 1.5px dashed #cfd6e0;
+    box-shadow: none;
+  }
+  .tile-add:hover {
+    background: #fff;
+    border-color: var(--accent);
+    box-shadow: 0 2px 8px #2563eb1a;
+  }
+  .tile-add .ico { color: var(--accent); font-size: 26px; }
+  .tile-add .nm { color: var(--accent); }
+
   /* 插件图标：给一点颜色，因为它们是"别人的东西" */
   .tile.plugin { background: #fff; }
   .tile.plugin .ico { filter: saturate(1.1); }
@@ -127,7 +143,7 @@
 </head>
 <body>
 <header>
-  <span class="title">桌面</span>
+  <span class="title">桌布</span>
   <span class="grow"></span>
   <span class="hint" id="hint"></span>
 </header>
@@ -170,7 +186,7 @@
   'use strict';
 
   // ── 和浮游通信 ──────────────────────────────────────────
-  // 协议（2026-11-10）：`type` 以 `fou:` 开头，挂板/桌面会被浮游原样转发。
+  // 协议（2026-11-10）：`type` 以 `fou:` 开头，挂板/桌布会被浮游原样转发。
   function tell(action, extra) {
     var msg = { type: 'fou:desk', action: action };
     if (extra) for (var k in extra) msg[k] = extra[k];
@@ -201,13 +217,24 @@
     var grid = document.getElementById('plugGrid');
     var group = document.getElementById('gPlug');
     if (!dock.length) {
-      // 没有插件：不画空盒子，只在区域里留一句
+      // 没有插件：给一个 ➕（2026-11-10 用户第 3 条）。
+      // 判据：**不是写一句"你可以这样做"，是给一个能点的东西。**
+      // 点击 → 浮游给当前会话发一条消息，让 agent 去做（它知道自己会什么）。
       group.style.display = '';
       grid.innerHTML = '';
-      var p = document.createElement('div');
-      p.className = 'empty';
-      p.textContent = '还没有插件接进浮游 —— 去插件页看看，或者让插件调一次挂靠。';
-      grid.appendChild(p);
+      var add = document.createElement('button');
+      add.className = 'tile tile-add';
+      add.dataset.act = 'addPlugin';
+      add.title = '添加插件 —— 会请会话说一声，让 agent 帮你挂';
+      var ai = document.createElement('span');
+      ai.className = 'ico';
+      ai.textContent = '＋';
+      var an = document.createElement('span');
+      an.className = 'nm';
+      an.textContent = '挂载插件';
+      add.appendChild(ai);
+      add.appendChild(an);
+      grid.appendChild(add);
       return;
     }
     group.style.display = '';
@@ -250,8 +277,7 @@
     var tail = document.getElementById('tail');
     document.getElementById('hint').textContent = '点图标即可';
     if (!dock.length) {
-      tail.innerHTML = '桌面是留白的 —— 它不填满，因为还能放。<br>' +
-        '想让插件进来？对会话说 <code>「把地颂挂进浮游」</code>。';
+      tail.textContent = '桌布是留白的 —— 它不填满，因为还能放。';
     } else {
       tail.textContent = '';
     }

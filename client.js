@@ -1237,6 +1237,12 @@ window.__ModuleLoader__.load({
        *  硬挂载（sheet.mount）不属于这三种，单独记 'mount'（三个图标都不亮）。 */
       const sheetMode = sheet ? (sheet.mount ? 'mount' : modeOfUrl(sheet.url)) : 'browse';
 
+      // 桌面（2026-11-10）：右键 → 打开桌面。用 ref 让"React 之外"的右键处理器能调它。
+      // ⚠ 必须**声明在使用之前** —— openDesk 一赋值就读它。
+      //   2026-11-10 踩过 TDZ：`Cannot access before initialization`，
+      //   整个 CourierBar 崩掉，浮游直接从页面上消失（用户："浮游坏了"）。
+      const deskOpenRef = React.useRef(null);
+
       /** 三个模式图标点下去：换页（同一个框，换内容）。 */
       const openModeSheet = (want) => {
         const params = new URLSearchParams();
@@ -1372,8 +1378,6 @@ window.__ModuleLoader__.load({
       };
       // Right-click menu: { x, y } in client coords, or null when closed.
       const [menu, setMenu] = React.useState(null);
-      // 桌面（2026-11-10）：右键 → 打开桌面。用 ref 让"标签外"的右键处理器能调它。
-      const deskOpenRef = React.useRef(null);
       // 右键菜单三分区（功能/挂靠/设置）各自的展开状态：null | 'browse' | 'dock' | 'setting'
       const [menuTab, setMenuTab] = React.useState(null);
       // Pure charm, opt-in: hop a little when the menu is dismissed.

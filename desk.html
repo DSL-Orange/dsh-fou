@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>桌面 · 浮游</title>
+<style>
+  /* ── 白布 ──────────────────────────────────────────────
+     2026-11-10 用户："右键打开一个桌面。" / "一块白布，如 Windows 桌面"。
+     这一页**不是菜单**，是**摊开的菜单**：原来右键里藏的东西，全摆在这儿。
+
+     三条判据（用户定的）：
+       ① 空白本身是内容 —— 桌面不填满，留白就是"还能放"。
+       ② 图标是可点的，不是文字说明 —— 点一下比读一句快。
+       ③ 分组靠间距，不靠标题 —— 用户："我们用设计做说明。"
+  */
+  :root {
+    --ink: #1f2937;
+    --dim: #6b7280;
+    --line: #e5e7eb;
+    --card: #ffffff;
+    --hover: #f3f4f6;
+    --accent: #2563eb;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    font: 13px/1.5 -apple-system, "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+    color: var(--ink);
+    /* 白布：极浅的暖灰，不是纯白 —— 纯白在毛玻璃上会发灰 */
+    background: linear-gradient(180deg, #fbfbfc 0%, #f7f8fa 100%);
+    display: flex;
+    flex-direction: column;
+    overflow: auto;
+  }
+
+  header {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 14px 8px;
+    border-bottom: 1px solid var(--line);
+    background: rgba(255, 255, 255, .7);
+    backdrop-filter: blur(8px);
+    position: sticky;
+    top: 0;
+    z-index: 2;
+  }
+  header .title { font-weight: 600; font-size: 13px; }
+  header .grow { flex: 1; }
+  header .hint { color: var(--dim); font-size: 11px; }
+
+  main {
+    flex: 1;
+    padding: 18px 14px 36px;
+    display: flex;
+    flex-direction: column;
+    gap: 26px;
+  }
+
+  /* 一组图标 */
+  .group { display: flex; flex-direction: column; gap: 10px; }
+  /* 组与组之间没有标题，只有一条极淡的分隔 + 间距（判据③） */
+  .grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .tile {
+    width: 84px;
+    height: 84px;
+    border: 0;
+    border-radius: 14px;
+    background: var(--card);
+    box-shadow: 0 1px 2px #0000000a, 0 4px 14px #0000000d;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    cursor: pointer;
+    color: var(--ink);
+    font: inherit;
+    transition: transform .12s ease, box-shadow .12s ease, background .12s ease;
+    padding: 6px;
+  }
+  .tile:hover {
+    background: #fff;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px #0000000f, 0 8px 22px #00000014;
+  }
+  .tile:active { transform: translateY(0) scale(.985); }
+  .tile .ico { font-size: 24px; line-height: 1; }
+  .tile .nm {
+    font-size: 11px;
+    color: var(--dim);
+    max-width: 72px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* 插件图标：给一点颜色，因为它们是"别人的东西" */
+  .tile.plugin { background: #fff; }
+  .tile.plugin .ico { filter: saturate(1.1); }
+
+  /* 空组：不画空盒子，只留一句灰话（判据①） */
+  .empty { color: var(--dim); font-size: 11.5px; padding: 2px 2px 0; }
+
+  /* 右下角：给"还能放什么"留一个视觉上的口子 */
+  .tail {
+    margin-top: auto;
+    padding-top: 18px;
+    color: #b6bcc6;
+    font-size: 11px;
+    text-align: center;
+  }
+  .tail code {
+    background: #eef1f5;
+    padding: 1px 5px;
+    border-radius: 4px;
+    color: #4b5563;
+  }
+</style>
+</head>
+<body>
+<header>
+  <span class="title">桌面</span>
+  <span class="grow"></span>
+  <span class="hint" id="hint"></span>
+</header>
+
+<main id="main">
+  <!-- ① 功能 -->
+  <div class="group" id="gFunc">
+    <div class="grid">
+      <button class="tile" data-act="browse" title="回到最近打开的那一页">
+        <span class="ico">👁</span><span class="nm">浏览</span>
+      </button>
+      <button class="tile" data-act="edit" title="编辑即保存、发送即落稿">
+        <span class="ico">✏️</span><span class="nm">编辑</span>
+      </button>
+      <button class="tile" data-act="panels" title="盛放挂表的地方">
+        <span class="ico">📌</span><span class="nm">挂板</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- ② 插件（从浮游传进来） -->
+  <div class="group" id="gPlug" style="display:none">
+    <div class="grid" id="plugGrid"></div>
+  </div>
+
+  <!-- ③ 设置（只留一个入口 —— 点了回浮游自己的设置菜单） -->
+  <div class="group" id="gSet">
+    <div class="grid">
+      <button class="tile" data-act="setting" title="浮游自身的设置：复位位置 / 收起 / 躲鼠标">
+        <span class="ico">⚙</span><span class="nm">设置</span>
+      </button>
+    </div>
+  </div>
+
+  <div class="tail" id="tail"></div>
+</main>
+
+<script>
+(function () {
+  'use strict';
+
+  // ── 和浮游通信 ──────────────────────────────────────────
+  // 协议（2026-11-10）：`type` 以 `fou:` 开头，挂板/桌面会被浮游原样转发。
+  function tell(action, extra) {
+    var msg = { type: 'fou:desk', action: action };
+    if (extra) for (var k in extra) msg[k] = extra[k];
+    try {
+      window.parent.postMessage(msg, window.location.origin);
+    } catch (e) { /* 不在浮游里就静默 */ }
+  }
+
+  // ── 读浮游传进来的坞条目 ────────────────────────────────
+  // URL: ?dock=<encodeURIComponent(JSON)>
+  // 形如 [{"id":"song.dock","label":"地颂","icon":"♫"}, …]
+  function readDock() {
+    try {
+      var q = new URLSearchParams(location.search).get('dock');
+      if (!q) return [];
+      var arr = JSON.parse(q);
+      if (!Array.isArray(arr)) return [];
+      return arr.filter(function (x) {
+        return x && typeof x.id === 'string' && x.id !== '';
+      });
+    } catch (e) {
+      return [];
+    }
+  }
+
+  function paintDock() {
+    var dock = readDock();
+    var grid = document.getElementById('plugGrid');
+    var group = document.getElementById('gPlug');
+    if (!dock.length) {
+      // 没有插件：不画空盒子，只在区域里留一句
+      group.style.display = '';
+      grid.innerHTML = '';
+      var p = document.createElement('div');
+      p.className = 'empty';
+      p.textContent = '还没有插件接进浮游 —— 去插件页看看，或者让插件调一次挂靠。';
+      grid.appendChild(p);
+      return;
+    }
+    group.style.display = '';
+    grid.innerHTML = '';
+    dock.forEach(function (item) {
+      var b = document.createElement('button');
+      b.className = 'tile plugin';
+      b.dataset.act = 'dock';
+      b.dataset.id = item.id;
+      b.title = String(item.label || item.id);
+      var ico = document.createElement('span');
+      ico.className = 'ico';
+      ico.textContent = String(item.icon || '●');
+      var nm = document.createElement('span');
+      nm.className = 'nm';
+      nm.textContent = String(item.label || item.id);
+      b.appendChild(ico);
+      b.appendChild(nm);
+      grid.appendChild(b);
+    });
+  }
+
+  // ── 点击 ────────────────────────────────────────────────
+  document.addEventListener('click', function (event) {
+    var el = event.target;
+    while (el && el !== document.body) {
+      if (el.classList && el.classList.contains('tile')) break;
+      el = el.parentNode;
+    }
+    if (!el || el === document.body) return;
+    var act = el.dataset.act;
+    if (!act) return;
+    if (act === 'dock') tell('dock', { id: el.dataset.id });
+    else tell(act);
+  });
+
+  // ── 空白态的教学：只在"什么都没有"时说话 ────────────────
+  function paintTail() {
+    var dock = readDock();
+    var tail = document.getElementById('tail');
+    document.getElementById('hint').textContent = '点图标即可';
+    if (!dock.length) {
+      tail.innerHTML = '桌面是留白的 —— 它不填满，因为还能放。<br>' +
+        '想让插件进来？对会话说 <code>「把地颂挂进浮游」</code>。';
+    } else {
+      tail.textContent = '';
+    }
+  }
+
+  paintDock();
+  paintTail();
+})();
+</script>
+</body>
+</html>

@@ -185,6 +185,8 @@ window.__ModuleLoader__.load({
       pillCrossHint: '点一下进入会话列表（滚轮切会话）',
       pillListHint: '展开会话列表（直接选）',
       pillSlotHint: '切换应用（点一下换下一个）',
+      firstRunHint: '滚轮切功能 · Shift+滚轮切应用 · 右键开间 · 对会话说「给我一份 checklist」',
+      deskTitle: '桌面',
       noSession: '没有活动会话',
       noSessionHint: '打开一个会话后，就能从这里发消息',
       noScope: '会话作用域不可用',
@@ -268,6 +270,8 @@ window.__ModuleLoader__.load({
       pillCrossHint: 'Click to scrub sessions (wheel to switch)',
       pillListHint: 'Open session list (pick directly)',
       pillSlotHint: 'Switch app (click to cycle)',
+      firstRunHint: 'Scroll to switch pane · Shift+scroll to switch app · Right-click for the pane · Say "give me a checklist"',
+      deskTitle: 'Desk',
       noSession: 'No active session',
       noSessionHint: 'Open a session and you can message it from here',
       noScope: 'Session scope unavailable',
@@ -1185,6 +1189,23 @@ window.__ModuleLoader__.load({
       // 切换只用**点击左栏**，不用滚轮 —— 滚轮已经归三态了，不能再分一个含义。
       const [pillApp, setPillApp] = React.useState(null);
       const [pillAppTick, setPillAppTick] = React.useState(0);
+      // 首次教学（2026-11-10）：localStorage 里没有 fou.seen.v1 就显示一句怎么用。
+      const SEEN_KEY = 'fou.seen.v1';
+      const [learning, setLearning] = React.useState(() => {
+        try {
+          return window.localStorage.getItem(SEEN_KEY) !== '1';
+        } catch (error) {
+          return false;
+        }
+      });
+      const markSeen = React.useCallback(() => {
+        try {
+          window.localStorage.setItem(SEEN_KEY, '1');
+        } catch (error) {
+          /* storage unavailable */
+        }
+        setLearning(false);
+      }, []);
       // 横滚（2026-11-09）：简讯放不下才滚。用 ref 量真实宽度，别靠字数猜。
       const pillTextRef = React.useRef(null);
       const [pillOverflow, setPillOverflow] = React.useState(false);
@@ -1252,6 +1273,36 @@ window.__ModuleLoader__.load({
         }
         setMode('panel');
       };
+
+      // ── 桌面（2026-11-10 用户："右键打开一个桌面"）
+      //
+      // 它是**摊开的菜单**：原来右键里藏着的（浏览/编辑/挂板/挂靠/设置），
+      // 全摆在这一页的图标上。判据：**不告诉用户有什么，把东西摆出来让他看见。**
+      //
+      // 坞条目通过 URL 传过去（桌面是 iframe，读不到浮游的 React 状态）。
+      // ⚠ URL 有长度上限，但坞条目一般 <10 个，够用。
+      const openDesk = () => {
+        const params = new URLSearchParams();
+        if (activeId) {
+          params.set('notify', activeId);
+          params.set('notifyName', activeTitle || '');
+        }
+        const items = dockEntries
+          .map((entry) => ({
+            id: entry.id,
+            label: entry.label || entry.id,
+            icon: entry.icon || '',
+          }))
+          .filter((item) => item.id !== 'fou.hop');
+        if (items.length > 0) params.set('dock', JSON.stringify(items));
+        const qs = params.toString();
+        const url = '/dsh-fou/desk.html' + (qs ? '?' + qs : '');
+        setRecentOpen(false);
+        setMenuTab(null);
+        setSheet({ url, title: t('deskTitle') });
+        setMode('panel');
+      };
+      deskOpenRef.current = openDesk;
 
       // 把"打开这个 url"的能力交给 factory 里的链接右键处理器（它活在 React 之外）。
       // 挂载时注册，卸载时撤销；同时把"坞还没出来时收到的请求"补开一次。
@@ -1321,6 +1372,8 @@ window.__ModuleLoader__.load({
       };
       // Right-click menu: { x, y } in client coords, or null when closed.
       const [menu, setMenu] = React.useState(null);
+      // 桌面（2026-11-10）：右键 → 打开桌面。用 ref 让"标签外"的右键处理器能调它。
+      const deskOpenRef = React.useRef(null);
       // 右键菜单三分区（功能/挂靠/设置）各自的展开状态：null | 'browse' | 'dock' | 'setting'
       const [menuTab, setMenuTab] = React.useState(null);
       // Pure charm, opt-in: hop a little when the menu is dismissed.
@@ -1432,6 +1485,17 @@ window.__ModuleLoader__.load({
           return;
         }
         event.preventDefault();
+        // ── 右键 = 打开桌面（2026-11-10 用户："右键打开一个桌面"）
+        //
+        // 原来的右键菜单被**摊开**成了桌面上的图标（浏览/编辑/挂板/插件/设置）。
+        // 判据：**菜单是"告诉你有几项"，桌面是"把东西摆出来"。**
+        // ——而桌面能留白，菜单不能。
+        const open = deskOpenRef.current;
+        if (typeof open === 'function') {
+          open();
+          return;
+        }
+        // 兜底（正常不会走到）：桌面还没挂上时，退回旧菜单
         const box = { w: 196, h: 320 };
         setMenuTab(null);
         setMenu({
@@ -1938,6 +2002,50 @@ window.__ModuleLoader__.load({
             return;
           }
 
+          // 「桌面点了一个图标」（2026-11-10）：桌面是 iframe，它只负责"被点"，
+          // 真正的动作在这里执行 —— 因为它要动浮游自己的状态（形态 / 开间）。
+          //
+          // ⚠ 只用**已存在**的函数与状态（openModeSheet / dockEntries / setSheet / setMode /
+          //   setMenu / setMenuTab）。设置仍走旧菜单 —— 它是浮游自身的开关，不需要"摆出来"。
+          if (data.type === 'fou:desk') {
+            const action = typeof data.action === 'string' ? data.action : '';
+            if (action === 'browse' || action === 'edit' || action === 'panels') {
+              setMenu(null);
+              setMenuTab(null);
+              openModeSheet(action === 'panels' ? 'form' : action);
+              return;
+            }
+            if (action === 'dock') {
+              const id = typeof data.id === 'string' ? data.id : '';
+              if (!id) return;
+              const entry = dockEntries.find((item) => item && item.id === id);
+              if (!entry) return;
+              setMenu(null);
+              setMenuTab(null);
+              // 硬挂载优先（2026-11-08）：有 mount 就挂进开间，是活的界面；
+              // 没有 mount 才退回 run（遥控 / 让它自己弹窗）。
+              if (typeof entry.mount === 'function') {
+                setSheet({ mount: entry, title: entry.label });
+                setMode('panel');
+                return;
+              }
+              if (typeof entry.run === 'function') {
+                try {
+                  entry.run();
+                } catch (error) {
+                  /* 坏条目不能弄坏桌面 */
+                }
+              }
+              return;
+            }
+            if (action === 'setting') {
+              setMenuTab('setting');
+              setMenu({ x: 24, y: 24 });
+              return;
+            }
+            return;
+          }
+
           // 「记住一件东西」：编辑器的 [保存] 落稿后回报，记进"最近编辑"，
           // 让"最近"记的是**稿**，而不是"我打开过编辑器"（2026-11-08）。
           if (data.type === 'fou:remember') {
@@ -2148,7 +2256,14 @@ window.__ModuleLoader__.load({
       })();
 
       const latest = rows.length > 0 ? rows[rows.length - 1] : null;
-      const pillText = latest ? pickBrief(latest.text) || t('hint') : t('hint');
+      // 首次安装的一次性教学（2026-11-10「引导四格」的「用户·主动」）：
+      // 装好后第一次打开，胶囊不显示"暂无会话"，而是显示一句怎么用；
+      // 一滚轮就写标记，从此不再出现。**不弹窗、不打扰** —— 它只在"用户第一次看它"时说话。
+      const pillText = learning
+        ? t('firstRunHint')
+        : latest
+          ? pickBrief(latest.text) || t('hint')
+          : t('hint');
       // 简讯排版（2026-11-09 用户）：开头是**会话名**，中间只留一个「·」，
       // 结尾留空隔 —— 这样滚起来每一段都像"一条信息"，有整体感。
       // 会话名太长就截短：胶囊空间有限，名字只是"定位"，不是内容。
@@ -2219,6 +2334,8 @@ window.__ModuleLoader__.load({
         const el = mode === 'orb' ? bubbleRef.current : pillWrapRef.current;
         if (!el) return undefined;
         const onWheel = (event) => {
+          // 首次教学：任何一次滚轮都算"看过了"。
+          if (learning) markSeen();
           // 列表浮层自己会滚 —— 在它的范围内**不劫持**滚轮。
           // 判据：任何"浮在上面"的可滚动区域，必须在它自己的范围内接管滚轮。
           // （否则滚列表 = 滚胶囊，列表永远滚不动。）

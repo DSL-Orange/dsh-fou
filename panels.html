@@ -30,6 +30,9 @@
   iframe { flex:1; border:0; background:#fff; }
   pre { flex:1; margin:0; padding:14px 16px; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; font:12.5px/1.6 ui-monospace,Consolas,"Cascadia Mono",monospace; background:#fff; }
   .empty { margin:auto; color:var(--dim); text-align:center; padding:24px; line-height:1.9; }
+  .empty .say { margin:6px auto; max-width:420px; padding:5px 10px; border:1px dashed var(--line); border-radius:8px; color:#1f2937; background:#fafbfd; font-size:12px; }
+  .empty .also { margin-top:10px; font-size:11px; }
+  .empty b { color:#111827; }
   .empty code { background:#eef1f5; padding:1px 5px; border-radius:4px; }
   .err { color:#b91c1c; padding:14px 16px; }
 </style>
@@ -47,8 +50,12 @@
   <div class="body" id="body">
     <div class="empty" id="empty">
       挂板是空的。<br />
-      把东西挂上来即可 —— <code>html</code> / <code>md</code> / <code>json</code> / <code>纯文本</code> 都行。<br />
-      <span style="font-size:11px">（宿主接口：<code>POST /dsh-fou/hang</code>）</span>
+      <b>对任意会话说下面任一句</b>，就能得到一张能填、能提交的表：
+      <div class="say">「给我一份 check list，我们对照着打勾、写评语」</div>
+      <div class="say">「一份验收表，逐项验收并评价，另有评论区我要打字」</div>
+      <div class="say">「批注表，我要按段落批注」</div>
+      <div class="also">也可以说「把这份内容挂到挂板上」——任何 <code>html</code> / <code>md</code> / <code>json</code> / 纯文本都行。</div>
+      <span style="font-size:10px;opacity:.5">（技术接口：<code>POST /dsh-fou/hang</code>）</span>
     </div>
   </div>
 </main>

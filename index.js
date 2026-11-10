@@ -23,6 +23,7 @@ const ROUTES = {
   sheet: '/dsh-fou/sheet',
   panels: '/dsh-fou/panels',
   panelsPage: '/dsh-fou/panels.html',
+  deskPage: '/dsh-fou/desk.html',
   panel: '/dsh-fou/panel',
   hang: '/dsh-fou/hang',
   editor: '/dsh-fou/editor.html',
@@ -41,6 +42,7 @@ const MAX_PANEL_BYTES = 4 * 1024 * 1024
 const HERE = dirname(fileURLToPath(import.meta.url))
 const TABLE_FILE = join(HERE, 'accept.html')
 const PANELS_FILE = join(HERE, 'panels.html')
+const DESK_FILE = join(HERE, 'desk.html')
 const EDITOR_FILE = join(HERE, 'editor.html')
 const VIEW_FILE = join(HERE, 'view.html')
 const DRAFT_DIR_NAME = '_草稿'
@@ -667,6 +669,22 @@ export function apply(ctx, config) {
             sendHTML(res, 200, await readFile(PANELS_FILE, 'utf8'))
           } catch (error) {
             sendHTML(res, 500, '<h1>挂板页面缺失</h1><p>' + PANELS_FILE + '</p>')
+          }
+        },
+      ],
+      [
+        // 桌面（2026-11-10 用户："右键打开一个桌面"）
+        // 它是"摊开的菜单"：原来右键里藏着的东西，全摆在这一页上。
+        ROUTES.deskPage,
+        async (req, res) => {
+          if (req.method !== 'GET') {
+            sendJSON(res, 405, { error: '只支持 GET' })
+            return
+          }
+          try {
+            sendHTML(res, 200, await readFile(DESK_FILE, 'utf8'))
+          } catch (error) {
+            sendHTML(res, 500, '<h1>桌面页缺失</h1><p>' + DESK_FILE + '</p>')
           }
         },
       ],

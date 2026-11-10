@@ -16,6 +16,7 @@
     "panels.html",
     "editor.html",
     "view.html",
+    "desk.html",
     "cordis.patch.yml",
     "locale/*.json",
     "README.md",

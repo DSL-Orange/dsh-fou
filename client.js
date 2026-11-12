@@ -2098,6 +2098,17 @@ window.__ModuleLoader__.load({
               collapse();
               return;
             }
+            // 排序方式（2026-11-12 用户第一需求）：设置页里改，立刻生效并记住。
+            // ⚠ 必须在 fou:setting 里 —— 早先误加进了 fou:desk（那里不认 sort），
+            //   导致"点了时间，退出又回到频次"。2026-11-12 用户实测报的 bug。
+            if (action === 'sort') {
+              const next = typeof data.value === 'string' ? data.value : '';
+              if (SORT_MODES.indexOf(next) >= 0) {
+                setSortMode(next);
+                saveSort(next);
+              }
+              return;
+            }
             return;
           }
 
@@ -2139,15 +2150,6 @@ window.__ModuleLoader__.load({
             }
             if (action === 'setting') {
               openSettings();
-              return;
-            }
-            // 排序方式（2026-11-12 用户第一需求）：设置页里改，立刻生效并记住。
-            if (action === 'sort') {
-              const next = typeof data.value === 'string' ? data.value : '';
-              if (SORT_MODES.indexOf(next) >= 0) {
-                setSortMode(next);
-                saveSort(next);
-              }
               return;
             }
             // ➕ 挂载插件（2026-11-10 用户第 3 条）：

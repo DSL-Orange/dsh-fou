@@ -871,13 +871,13 @@ window.__ModuleLoader__.load({
       if (row && row.running) return 'run';
       if (notify && notify.open) return 'run';
       // 「未读」判据（2026-11-12 用户："就像一条未读消息"）：
-      //   那边的最后活动时间 > 我上次看它时的水位 → 有新东西，还没过去看。
-      //   一穿越过去就记水位，所以点开即消。
+      //   ⚠ 必须有"上次看它的水位"作为基准 —— 没有基准就没有"未读"。
+      //   2026-11-12 第一版把"没有水位"当成 0，结果 lastAt > 0 恒成立，
+      //   所有会话全变蓝。用户当场报："把所有会话都标记了。"
+      //   正确语义：**未读是"相对上次看"的变化；没有上次，就没有未读。**
       const at = lastAt(row);
-      if (at > 0) {
-        const mark = seen && typeof seen[row.id] === 'number' ? seen[row.id] : 0;
-        if (at > mark) return 'done';
-      }
+      const mark = seen && typeof seen[row.id] === 'number' ? seen[row.id] : null;
+      if (at > 0 && mark !== null && at > mark) return 'done';
       if (notify && notify.last) return 'done';
       return 'idle';
     }

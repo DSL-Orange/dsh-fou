@@ -352,7 +352,7 @@ window.__ModuleLoader__.load({
 .cur-dot{flex:none;width:6px;height:6px;border-radius:50%;background:var(--dsw-alias-label-tertiary,#bbb);opacity:.55}
 .cur-dot[data-status=run]{background:var(--dsw-alias-state-success-primary,#0d9458);opacity:1;box-shadow:0 0 0 2px color-mix(in srgb,var(--dsw-alias-state-success-primary,#0d9458) 22%,transparent)}
 .cur-dot[data-status=wait]{background:var(--dsw-alias-state-warning-primary,#d99a00);opacity:1}
-.cur-dot[data-status=done]{background:var(--dsw-alias-label-tertiary,#aaa);opacity:.7}
+.cur-dot[data-status=done]{background:var(--dsw-alias-brand-primary,#4d6bfe);opacity:1}
 .cur-dot[data-status=idle]{opacity:.3}
 .cur-pick-title{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 /* 效果图：另一来源的行（2026-11-08）—— 蓝，不可点，明显是样本 */

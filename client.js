@@ -613,6 +613,39 @@ window.__ModuleLoader__.load({
 
     const PIN_KEY = 'fou.bar.pins.v1';
 
+    // 「已读水位」（2026-11-12 用户："就像一条未读消息"）：
+    //   记下"我最后一次看这个会话时，它的 lastAt 是多少"。
+    //   之后如果 lastAt 变大 → 那边有新东西 → 状态点是蓝的（未读）。
+    //   一穿越过去就记一笔 → 立刻变成已读（淡灰）。
+    //
+    // ⚠ 不用 notify.last 作为条件 —— 那个投影只有"后台跑过任务并发过通知"
+    //   的会话才有，普通对话会话永远是 idle。用 lastAt 比它宽，且语义更准：
+    //   **蓝 = 那边有新动静，你还没过去看。**
+    const SEEN_KEY = 'fou.bar.seen.v1';
+
+    function readSeen() {
+      try {
+        const raw = window.localStorage.getItem(SEEN_KEY);
+        const value = raw ? JSON.parse(raw) : {};
+        if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+        const out = {};
+        for (const key of Object.keys(value)) {
+          if (typeof value[key] === 'number' && Number.isFinite(value[key])) out[key] = value[key];
+        }
+        return out;
+      } catch (error) {
+        return {};
+      }
+    }
+
+    function saveSeen(map) {
+      try {
+        window.localStorage.setItem(SEEN_KEY, JSON.stringify(map));
+      } catch (error) {
+        /* storage unavailable */
+      }
+    }
+
     // 会话列表的排序方式（2026-11-12 用户从使用中提的第一条真实需求）：
     //   time   = 最近有活动（updatedAt 降序）
     //   freq   = 穿越次数（freq 降序）—— 2011-11-04 起一直是这个
@@ -831,12 +864,20 @@ window.__ModuleLoader__.load({
      * 状态点（照抄调度总台的口径，数据来自 `notify` 投影，用户 2026-11-03）：
      * `pending` 非空 → 待授权；正在跑或 `open` 存在 → 运行中；有 `last` → 已完成；否则未动。
      */
-    function statusOf(row) {
+    function statusOf(row, seen) {
       const notify = projectionVal(row, 'notify');
       const pending = notify && Array.isArray(notify.pending) ? notify.pending : [];
       if (pending.length > 0) return 'wait';
       if (row && row.running) return 'run';
       if (notify && notify.open) return 'run';
+      // 「未读」判据（2026-11-12 用户："就像一条未读消息"）：
+      //   那边的最后活动时间 > 我上次看它时的水位 → 有新东西，还没过去看。
+      //   一穿越过去就记水位，所以点开即消。
+      const at = lastAt(row);
+      if (at > 0) {
+        const mark = seen && typeof seen[row.id] === 'number' ? seen[row.id] : 0;
+        if (at > mark) return 'done';
+      }
       if (notify && notify.last) return 'done';
       return 'idle';
     }
@@ -854,7 +895,7 @@ window.__ModuleLoader__.load({
      * 按最后活动时间倒序，置顶的排最前；**不按工作区分组**（要按工作区找，
      * 去左侧栏）。子会话不出现在这里 —— 那不是跟人说话的地方。
      */
-    function pickerRows(sessions, pins, activeId, freq, sortMode) {
+    function pickerRows(sessions, pins, activeId, freq, sortMode, seen) {
       let snapshot;
       try {
         snapshot = sessions.list.getSnapshot();
@@ -870,7 +911,7 @@ window.__ModuleLoader__.load({
         .map((row) => ({
           id: row.id,
           title: titleOf(row),
-          status: statusOf(row),
+          status: statusOf(row, seen),
           pinned: pinned.has(row.id),
           // 四层权重，显式排序（用户 2026-11-04 定：按频率优先）：
           //   ① 优先级 = 手动置顶（人的决定，永远最上）
@@ -1275,6 +1316,8 @@ window.__ModuleLoader__.load({
       const [jumps, setJumps] = React.useState(readJumps);
       const [parking, setParking] = React.useState(false);
       const [pins, setPins] = React.useState(readPins);
+      // 已读水位（2026-11-12）：{ 会话id: 我上次看它时的 lastAt }
+      const [seen, setSeen] = React.useState(readSeen);
       // 会话列表排序方式（2026-11-12）：time / freq / weight，存 localStorage。
       const [sortMode, setSortMode] = React.useState(readSort);
       // openSettings 在 sortMode 声明之前就会定义（render 顺序），所以走 ref。
@@ -1422,6 +1465,24 @@ window.__ModuleLoader__.load({
       const jumpTo = (id) => {
         if (!id || !jump) return;
         recordJump(id);
+        // 标已读（2026-11-12 用户："就像一条未读消息"）：
+        // 穿越过去 = 看过了。把该会话此刻的 lastAt 记成水位，蓝点立刻消。
+        try {
+          const snap = sessions.list.getSnapshot();
+          const row = snap && snap.byId ? snap.byId[id] : null;
+          const at = row ? lastAt(row) : 0;
+          if (at > 0) {
+            setSeen((current) => {
+              if (current[id] >= at) return current;
+              const next = Object.assign({}, current);
+              next[id] = at;
+              saveSeen(next);
+              return next;
+            });
+          }
+        } catch (error) {
+          /* 记不上水位不该挡住穿越 */
+        }
         jump(id);
       };
 
@@ -2034,6 +2095,29 @@ window.__ModuleLoader__.load({
       // 所以按"用 ref 取最新"的老规矩来。
       const activeIdRef = React.useRef(null);
       activeIdRef.current = activeId;
+
+      // 「已读」= 当前会话就是它（2026-11-12）。
+      // 光靠 jumpTo 标已读不够 —— 从 DSH 侧栏切过去看了，浮游是不知道的，
+      // 那蓝点就会一直挂着误导人。所以只要它成了当前会话，就当读过了：
+      // **因为它就在你眼前。**
+      React.useEffect(() => {
+        if (!activeId) return;
+        try {
+          const snap = sessions.list.getSnapshot();
+          const row = snap && snap.byId ? snap.byId[activeId] : null;
+          const at = row ? lastAt(row) : 0;
+          if (at <= 0) return;
+          setSeen((current) => {
+            if (current[activeId] >= at) return current;
+            const next = Object.assign({}, current);
+            next[activeId] = at;
+            saveSeen(next);
+            return next;
+          });
+        } catch (error) {
+          /* 记不上水位不影响别的 */
+        }
+      }, [activeId]);
       const deliverNotice = async (id, text) => {
         let reference;
         try {
@@ -2444,7 +2528,7 @@ window.__ModuleLoader__.load({
 
       // 滚轮 handler 要读的三样东西：当前会话、可选会话列表、跳转函数。
       // 它们每次渲染都会变（闭包会过期），所以统一灌进 ref。
-      const pillRows = pickerRows(sessions, pins, activeId, freqMap, sortMode);
+      const pillRows = pickerRows(sessions, pins, activeId, freqMap, sortMode, seen);
       activeIdRef.current = activeId;
       pickerRowsRef.current = pillRows;
       pillJumpRef.current = jumpTo;
@@ -3003,7 +3087,7 @@ window.__ModuleLoader__.load({
                         ),
                       )
                     : null,
-                  pickerRows(sessions, pins, activeId, freqMap, sortMode)
+                  pickerRows(sessions, pins, activeId, freqMap, sortMode, seen)
                     .concat(mockRows(t))
                     .map((row) =>
                     h(

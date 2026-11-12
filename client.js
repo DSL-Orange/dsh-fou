@@ -613,6 +613,35 @@ window.__ModuleLoader__.load({
 
     const PIN_KEY = 'fou.bar.pins.v1';
 
+    // 会话列表的排序方式（2026-11-12 用户从使用中提的第一条真实需求）：
+    //   time   = 最近有活动（updatedAt 降序）
+    //   freq   = 穿越次数（freq 降序）—— 2011-11-04 起一直是这个
+    //   weight = 频次 × 时间衰减（常用且最近的最上）
+    //
+    // ⚠ 三种都只改 ③④ 两层 —— ① 置顶 / ② 当前会话 永远在最前。
+    //   因为前两层是"人的决定"和"我在哪"，不是排序策略能动的。
+    const SORT_KEY = 'fou.bar.sort.v1';
+    const SORT_MODES = ['time', 'freq', 'weight'];
+    // 权重的时间常数：24 小时。意思是"一天没碰，权重打对折"。
+    const WEIGHT_TAU_HOURS = 24;
+
+    function readSort() {
+      try {
+        const raw = window.localStorage.getItem(SORT_KEY);
+        return SORT_MODES.indexOf(raw) >= 0 ? raw : 'freq';
+      } catch (error) {
+        return 'freq';
+      }
+    }
+
+    function saveSort(value) {
+      try {
+        window.localStorage.setItem(SORT_KEY, value);
+      } catch (error) {
+        /* storage unavailable */
+      }
+    }
+
     function readPins() {
       try {
         const raw = window.localStorage.getItem(PIN_KEY);
@@ -825,7 +854,7 @@ window.__ModuleLoader__.load({
      * 按最后活动时间倒序，置顶的排最前；**不按工作区分组**（要按工作区找，
      * 去左侧栏）。子会话不出现在这里 —— 那不是跟人说话的地方。
      */
-    function pickerRows(sessions, pins, activeId, freq) {
+    function pickerRows(sessions, pins, activeId, freq, sortMode) {
       let snapshot;
       try {
         snapshot = sessions.list.getSnapshot();
@@ -854,9 +883,26 @@ window.__ModuleLoader__.load({
           updatedAt: lastAt(row),
         }))
         .sort((a, b) => {
+          // ①② 永远最先 —— 它们是"人的决定"和"我在哪"，任何排序策略都不该动。
           if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
           if (a.active !== b.active) return a.active ? -1 : 1;
-          // 频率优先，时间只在同频次时决定先后（用户 2026-11-04："按频率排序"）。
+          // ③④ 由排序方式决定（2026-11-12 用户要求可切换）。
+          const mode = SORT_MODES.indexOf(sortMode) >= 0 ? sortMode : 'freq';
+          if (mode === 'time') {
+            // 时间：谁最近有活动谁在前。
+            if (b.updatedAt !== a.updatedAt) return b.updatedAt - a.updatedAt;
+            return b.freq - a.freq;
+          }
+          if (mode === 'weight') {
+            // 权重：频次 ÷ (1 + 小时数/24) —— 常用且最近的最高；久没碰的会掉下去，
+            // 但不会归零（因为有 +1），所以"旧爱"不会彻底消失。
+            const now = Date.now();
+            const wa = a.freq / (1 + Math.max(0, now - a.updatedAt) / 3600000 / WEIGHT_TAU_HOURS);
+            const wb = b.freq / (1 + Math.max(0, now - b.updatedAt) / 3600000 / WEIGHT_TAU_HOURS);
+            if (wb !== wa) return wb - wa;
+            return b.updatedAt - a.updatedAt;
+          }
+          // freq（默认）：穿越次数优先，时间只在同频次时决定先后。
           if (a.freq !== b.freq) return b.freq - a.freq;
           return b.updatedAt - a.updatedAt;
         })
@@ -1229,6 +1275,11 @@ window.__ModuleLoader__.load({
       const [jumps, setJumps] = React.useState(readJumps);
       const [parking, setParking] = React.useState(false);
       const [pins, setPins] = React.useState(readPins);
+      // 会话列表排序方式（2026-11-12）：time / freq / weight，存 localStorage。
+      const [sortMode, setSortMode] = React.useState(readSort);
+      // openSettings 在 sortMode 声明之前就会定义（render 顺序），所以走 ref。
+      const sortModeRef = React.useRef(sortMode);
+      sortModeRef.current = sortMode;
       // 宽面板：装一个同源页面（iframe）。这是"操作界面"的穷人版 ——
       // 不需要别的插件改协议，只要页面同源就能装进来。
       const [sheet, setSheet] = React.useState(null);
@@ -1320,7 +1371,14 @@ window.__ModuleLoader__.load({
         setRecentOpen(false);
         setMenuTab(null);
         setMenu(null);
-        setSheet({ url: '/dsh-fou/settings.html?mode=' + encodeURIComponent(mode), title: t('settingsTitle') });
+        setSheet({
+          url:
+            '/dsh-fou/settings.html?mode=' +
+            encodeURIComponent(mode) +
+            '&sort=' +
+            encodeURIComponent(sortModeRef.current),
+          title: t('settingsTitle'),
+        });
         setMode('panel');
       };
 
@@ -2083,6 +2141,15 @@ window.__ModuleLoader__.load({
               openSettings();
               return;
             }
+            // 排序方式（2026-11-12 用户第一需求）：设置页里改，立刻生效并记住。
+            if (action === 'sort') {
+              const next = typeof data.value === 'string' ? data.value : '';
+              if (SORT_MODES.indexOf(next) >= 0) {
+                setSortMode(next);
+                saveSort(next);
+              }
+              return;
+            }
             // ➕ 挂载插件（2026-11-10 用户第 3 条）：
             // **不写一句"你可以这样做"，而是**替他说出口**。
             // 桌布上点 ➕ → 浮游给当前会话发一条消息 → agent 收到就去做。
@@ -2375,7 +2442,7 @@ window.__ModuleLoader__.load({
 
       // 滚轮 handler 要读的三样东西：当前会话、可选会话列表、跳转函数。
       // 它们每次渲染都会变（闭包会过期），所以统一灌进 ref。
-      const pillRows = pickerRows(sessions, pins, activeId, freqMap);
+      const pillRows = pickerRows(sessions, pins, activeId, freqMap, sortMode);
       activeIdRef.current = activeId;
       pickerRowsRef.current = pillRows;
       pillJumpRef.current = jumpTo;
@@ -2934,7 +3001,7 @@ window.__ModuleLoader__.load({
                         ),
                       )
                     : null,
-                  pickerRows(sessions, pins, activeId, freqMap)
+                  pickerRows(sessions, pins, activeId, freqMap, sortMode)
                     .concat(mockRows(t))
                     .map((row) =>
                     h(

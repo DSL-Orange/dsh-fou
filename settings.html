@@ -124,6 +124,25 @@
 </header>
 
 <main>
+  <!-- 形态已删（用户 2026-11-10：胶囊上滚一下就有，不该进设置） -->
+  <!-- 排序（2026-11-12 用户从使用中提的第一条真实需求） -->
+  <div class="sec">
+    <div class="label">穿越列表的排序</div>
+    <div class="row">
+      <span class="name">按什么排
+        <div class="desc">置顶和当前会话永远在最前，这里只决定"其余的先后"</div>
+      </span>
+      <span class="choice" id="sortChoice">
+        <button data-sort="time">时间</button>
+        <button data-sort="freq">频次</button>
+        <button data-sort="weight">权重</button>
+      </span>
+    </div>
+    <div class="row" style="padding-top:0">
+      <span class="desc" id="sortWhy"></span>
+    </div>
+  </div>
+
   <!-- 位置 -->
   <div class="sec">
     <div class="label">位置</div>
@@ -155,6 +174,26 @@
   function currentMode() {
     try { return new URLSearchParams(location.search).get('mode') || ''; } catch (e) { return ''; }
   }
+  // 当前排序从 URL 来：?sort=time|freq|weight
+  function currentSort() {
+    try { return new URLSearchParams(location.search).get('sort') || 'freq'; } catch (e) { return 'freq'; }
+  }
+
+  var SORT_WHY = {
+    time: '谁最近有动静谁在前 —— 适合"我刚在那边干完活"。',
+    freq: '穿越次数多的在前 —— 适合"常用的那几个"。',
+    weight: '频次 ÷ 时间衰减（一天没碰打对折）—— 常用且最近的最高。'
+  };
+
+  function paintSort() {
+    var cur = currentSort();
+    var btns = document.querySelectorAll('#sortChoice button');
+    for (var i = 0; i < btns.length; i++) {
+      btns[i].classList.toggle('on', btns[i].dataset.sort === cur);
+    }
+    var why = document.getElementById('sortWhy');
+    if (why) why.textContent = SORT_WHY[cur] || '';
+  }
 
   function paintMode() {
     var cur = currentMode();
@@ -175,10 +214,20 @@
     }
     if (!btn) return;
     if (btn.dataset.mode) { tell('mode', { value: btn.dataset.mode }); return; }
+    if (btn.dataset.sort) {
+      // 本地先亮起（不等浮游回话）—— 因为这是个"视图开关"，反馈要即时
+      var all = document.querySelectorAll('#sortChoice button');
+      for (var i = 0; i < all.length; i++) all[i].classList.toggle('on', all[i] === btn);
+      var why = document.getElementById('sortWhy');
+      if (why) why.textContent = SORT_WHY[btn.dataset.sort] || '';
+      tell('sort', { value: btn.dataset.sort });
+      return;
+    }
     if (btn.dataset.act) { tell(btn.dataset.act); return; }
   });
 
   paintMode();
+  paintSort();
 })();
 </script>
 </body>

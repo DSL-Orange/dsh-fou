@@ -421,7 +421,8 @@ window.__ModuleLoader__.load({
 .cur-pill-caret:hover{background:var(--dsw-alias-interactive-bg-hover-solid,var(--dsw-alias-interactive-bg-hover))}
 /* 下拉直达：浮层，不撑胶囊 —— 破坏的是页面，不是胶囊。 */
 .cur-pill-list{position:absolute;top:calc(100% + 6px);left:0;z-index:20;box-sizing:border-box;min-width:100%;max-width:min(420px,calc(100vw - 32px));max-height:260px;overflow-y:auto;padding:4px;border:.5px solid var(--dsw-alias-border-l2);border-radius:12px;background:var(--dsw-alias-bg-layer-1,#fff);box-shadow:0 12px 32px #00000029}
-.cur-pill-list-item{display:block;width:100%;padding:7px 10px;border:0;border-radius:8px;background:transparent;color:var(--dsw-alias-label-primary);font:inherit;font-size:12px;line-height:1.4;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}
+.cur-pill-list-item{display:flex;align-items:center;gap:7px;width:100%;padding:7px 10px;border:0;border-radius:8px;background:transparent;color:var(--dsw-alias-label-primary);font:inherit;font-size:12px;line-height:1.4;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}
+.cur-pill-list-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}
 .cur-pill-list-item:hover{background:var(--dsw-alias-interactive-bg-hover-solid,var(--dsw-alias-interactive-bg-hover))}
 .cur-pill-list-item.is-on{background:var(--dsw-alias-state-business-tertiary,rgba(29,78,216,.1));font-weight:600}
 .cur-pill-list-empty{padding:8px 10px;color:var(--dsw-alias-label-tertiary);font-size:12px}
@@ -2960,7 +2961,12 @@ window.__ModuleLoader__.load({
                                 jumpTo(row.id);
                               },
                             },
-                            row.title,
+                            // 2026-11-13 用户：「要不要把它俩界面同步？或者至少给前者丰富一些。」
+                            // 判据：**尺度不同，密度可以不同；但语义必须一致。**
+                            // 所以这里加**状态点**（语义：那边有没有新东西），
+                            // 不加频次/时间（那是密度，胶囊列表没地方）。
+                            h('span', { className: 'cur-dot', 'data-status': row.status }),
+                            h('span', { className: 'cur-pill-list-name' }, row.title),
                           ),
                         ),
                   )

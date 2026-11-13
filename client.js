@@ -188,6 +188,7 @@ window.__ModuleLoader__.load({
       firstRunHint: '滚轮切功能 · Shift+滚轮切应用 · 右键开间 · 对会话说「给我一份 checklist」',
       deskTitle: '桌布',
       settingsTitle: '设置',
+      roomTitle: '房间',
       addNoSession: '先开一个会话，我才好替你说话',
       noSession: '没有活动会话',
       noSessionHint: '打开一个会话后，就能从这里发消息',
@@ -275,6 +276,7 @@ window.__ModuleLoader__.load({
       firstRunHint: 'Scroll to switch pane · Shift+scroll to switch app · Right-click for the pane · Say "give me a checklist"',
       deskTitle: 'Tablecloth',
       settingsTitle: 'Settings',
+      roomTitle: 'Room',
       addNoSession: 'Open a session first, then I can speak for you',
       noSession: 'No active session',
       noSessionHint: 'Open a session and you can message it from here',
@@ -2208,6 +2210,16 @@ window.__ModuleLoader__.load({
               setMenu(null);
               setMenuTab(null);
               openModeSheet(action === 'panels' ? 'form' : action);
+              return;
+            }
+            // 房间（2026-11-13）：人和会话共用的一个地方。
+            // 它不是新协议 —— 就是一个页面 + 一个端点；**会话也能直接 POST 进来**。
+            // 用户："将权限交给会话。"
+            if (action === 'room') {
+              setMenu(null);
+              setMenuTab(null);
+              setSheet({ url: '/dsh-fou/room.html', title: t('roomTitle') });
+              setMode('panel');
               return;
             }
             if (action === 'dock') {

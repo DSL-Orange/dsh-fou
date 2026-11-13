@@ -27,6 +27,7 @@
     "view.html",
     "desk.html",
     "settings.html",
+    "room.html",
     "cordis.patch.yml",
     "locale/*.json",
     "README.md",

@@ -12,7 +12,7 @@
  *
  * 全部路由都要求 `x-dsh-fou` 头：挡住跨源"顺手一调"，与本机其它插件同一口径。
  */
-import { mkdir, writeFile, readFile, stat, readdir } from 'node:fs/promises'
+import { mkdir, writeFile, readFile, stat, readdir, appendFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -32,17 +32,29 @@ const ROUTES = {
   draft: '/dsh-fou/draft',
   commit: '/dsh-fou/commit',
   health: '/dsh-fou/health',
+  // 房间（2026-11-13）：人和会话共用的一个地方。
+  // 用户："一个聊天室能够将你们双方的消息都呈现出来，我可以围观，可以发言，可以打断。"
+  //      "开间本身意味着另一条路……将权限交给会话。"
+  // → GET 读全部、POST 写一条。**任何会话说一声就能进，这就是「权限交给会话」。**
+  roomPage: '/dsh-fou/room.html',
+  room: '/dsh-fou/room',
 }
 const DEFAULT_OUT = 'D:\\dsh-work\\_验收'
+// 房间的数据落在哪（2026-11-13）—— 刻意和 `_验收` 分开。
+const DEFAULT_ROOM_OUT = 'D:\\dsh-work\\_房间'
 const SHEET_DIR_NAME = '_表单'
 const IMAGE_DIR_NAME = 'images'
 const PANEL_DIR_NAME = '_挂板'
+// 房间的数据文件（2026-11-13）：一行一条消息。
+const ROOM_DIR_NAME = '_房间'
+const ROOM_FILE_NAME = 'messages.jsonl'
 const MAX_BODY_BYTES = 24 * 1024 * 1024
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024
 const MAX_PANEL_BYTES = 4 * 1024 * 1024
 const HERE = dirname(fileURLToPath(import.meta.url))
 const TABLE_FILE = join(HERE, 'accept.html')
 const PANELS_FILE = join(HERE, 'panels.html')
+const ROOM_FILE_HTML = join(HERE, 'room.html')
 const DESK_FILE = join(HERE, 'desk.html')
 const SETTINGS_FILE = join(HERE, 'settings.html')
 const EDITOR_FILE = join(HERE, 'editor.html')
@@ -551,6 +563,34 @@ function guarded(operation) {
 export function apply(ctx, config) {
   const configured = config && typeof config.outDir === 'string' ? config.outDir.trim() : ''
   const outDir = resolve(configured || DEFAULT_OUT)
+  // 房间的数据目录（2026-11-13）：和验收产物分开 —— 消息属于"沟通"，不属于"交付"。
+  const roomFilePath = join(resolve(DEFAULT_ROOM_OUT), ROOM_FILE_NAME)
+  // 读房间：一行一条；坏行跳过（手改坏了也不该让整页崩）。
+  const readRoom = async () => {
+    let raw = ''
+    try {
+      raw = await readFile(roomFilePath, 'utf8')
+    } catch (error) {
+      return []
+    }
+    const out = []
+    for (const line of raw.split('\n')) {
+      const s = line.trim()
+      if (s === '') continue
+      try {
+        const obj = JSON.parse(s)
+        if (obj && typeof obj.text === 'string') out.push(obj)
+      } catch (error) {
+        /* 跳过坏行 */
+      }
+    }
+    return out
+  }
+  // 写房间：只追加，永不改写（消息是记录，不是状态）。
+  const appendRoom = async (entry) => {
+    await mkdir(dirname(roomFilePath), { recursive: true })
+    await appendFile(roomFilePath, JSON.stringify(entry) + '\n', 'utf8')
+  }
   let version = '0.1.0'
   try {
     version = ctx.root.package.version
@@ -756,6 +796,70 @@ export function apply(ctx, config) {
           }
           const body = await readJSONBody(req)
           sendJSON(res, 200, { ok: true, panel: await hangPanel(outDir, body) })
+        },
+      ],
+      [
+        // 房间页面（2026-11-13）
+        ROUTES.roomPage,
+        async (req, res) => {
+          if (req.method !== 'GET') {
+            sendJSON(res, 405, { error: '只支持 GET' })
+            return
+          }
+          try {
+            sendHTML(res, 200, await readFile(ROOM_FILE_HTML, 'utf8'))
+          } catch (error) {
+            sendHTML(res, 500, '<h1>房间页面缺失</h1><p>' + ROOM_FILE_HTML + '</p>')
+          }
+        },
+      ],
+      [
+        // 房间数据（2026-11-13）
+        //
+        // 用户："一个聊天室能够将你们双方的消息都呈现出来，我可以围观，可以发言，可以打断。"
+        //      "开间本身意味着另一条路，类似挂板和编辑都实现的输入/输出的模式……将权限交给会话。"
+        //
+        // 所以这个端点是**给所有人用的**，不只给这一页：
+        //   · 人    → 页面里打字（POST）
+        //   · 浮游  → 它自己 POST
+        //   · 会话  → curl POST /dsh-fou/room      ← **这就是"权限交给会话"**
+        //
+        // 存储：D:\dsh-work\_房间\messages.jsonl（一行一条，只追加，永不改写）
+        // ⚠ 放 `_房间` 而不是 `_验收` —— 消息不是验收产物，别混。
+        ROUTES.room,
+        async (req, res) => {
+          try {
+            if (req.method === 'GET') {
+              sendJSON(res, 200, { ok: true, messages: await readRoom() })
+              return
+            }
+            if (req.method !== 'POST') {
+              sendJSON(res, 405, { error: '只支持 GET / POST' })
+              return
+            }
+            const body = await readJSONBody(req)
+            const text = typeof body.text === 'string' ? body.text.trim() : ''
+            if (!text) {
+              sendJSON(res, 400, { error: 'text 不能为空' })
+              return
+            }
+            // 一条消息最多 8 KB —— 房间是"说一句话"的地方，不是贴长文的地方。
+            // （要贴长文，挂板才是那个容器。）
+            if (text.length > 8192) {
+              sendJSON(res, 400, { error: '一条消息太长（上限 8 KB）' })
+              return
+            }
+            const from =
+              typeof body.from === 'string' && body.from.trim() !== ''
+                ? body.from.trim().slice(0, 60)
+                : '匿名'
+            const kind = body.kind === 'sys' ? 'sys' : 'msg'
+            const entry = { ts: new Date().toISOString(), from, kind, text }
+            await appendRoom(entry)
+            sendJSON(res, 200, { ok: true, message: entry })
+          } catch (error) {
+            sendJSON(res, 500, { error: String((error && error.message) || error) })
+          }
         },
       ],
       [

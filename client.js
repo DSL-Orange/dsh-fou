@@ -1464,9 +1464,21 @@ window.__ModuleLoader__.load({
 
       const jumpToActive = () => jumpTo(activeId);
 
-      /** 跳到某个会话（并记账 —— 这就是"序位的变化"）。 */
-      const jumpTo = (id) => {
+      /** 跳到某个会话（并记账 —— 这就是"序位的变化"）。
+       *
+       *  keepPicked（2026-11-17 第二次修）：
+       *    呼机自己的穿越 = `pick(row)` 先设 pickedRef，再调这里 → 传 true，保留那个"明确选择"。
+       *    其他所有穿越（胶囊列表 / chip）= 只想过去看一眼 → **不传**，
+       *    于是这里把 pickedRef 清掉，让 sync() 重新跟着主视图走。
+       *
+       *  ⚠ 之前的坑：`follow()` 那个负责清 pickedRef 的函数**根本没有调用点**
+       *    （只有字典里的 '跟随当前会话' 三个字）。所以 pickedRef 一旦被 pick() 设过
+       *    就**永远不清** —— 用户"用了一次呼机穿越之后，胶囊穿越又退回去了"，
+       *    根因就是 sync() 被 pickedRef 永久拦住了。
+       */
+      const jumpTo = (id, keepPicked) => {
         if (!id || !jump) return;
+        if (!keepPicked) pickedRef.current = null;
         recordJump(id);
         // 标已读（2026-11-12 用户："就像一条未读消息"）：
         // 穿越过去 = 看过了。把该会话此刻的 lastAt 记成水位，蓝点立刻消。
@@ -3153,7 +3165,7 @@ window.__ModuleLoader__.load({
                                 // 效果图那一行不穿越、**也不记账** —— 否则穿越账本里会多一条假边。
                                 if (row.mock) return;
                                 pick({ id: row.id, title: row.title });
-                                jumpTo(row.id);
+                                jumpTo(row.id, true);
                               },
                             },
                             row.freq > 0 ? '↗' + row.freq : '↗',

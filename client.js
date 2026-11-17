@@ -1314,6 +1314,12 @@ window.__ModuleLoader__.load({
       const [rows, setRows] = React.useState([]);
       // null = follow the session the main view shows; an id = the user picked one.
       const pickedRef = React.useRef(null);
+      // 「按在选中的那一页」（2026-11-17 用户）：
+      //   呼机里穿越 → 选中**跟着走**（那是"换到新的一页"）
+      //   胶囊里穿越 → 选中**不动**（那只是"顺手去别处看一眼"，不该把呼机的页翻掉）
+      // 所以这不是"选中是什么"，是"选中还跟不跟着主视图" —— 单独一个开关，
+      // 不去污染 pickedRef 的语义（pickedRef 表达"用户明确选了谁"）。
+      const pinnedRef = React.useRef(false);
       const [picking, setPicking] = React.useState(false);
       // 穿越记账：最近去过谁那儿。序位是值，序位的变化率才是权重 —— 这里记变化。
       const [jumps, setJumps] = React.useState(readJumps);
@@ -1464,9 +1470,16 @@ window.__ModuleLoader__.load({
 
       const jumpToActive = () => jumpTo(activeId);
 
-      /** 跳到某个会话（并记账 —— 这就是"序位的变化"）。 */
-      const jumpTo = (id) => {
+      /** 跳到某个会话（并记账 —— 这就是"序位的变化"）。
+       *
+       *  pin（2026-11-17 用户）：传 true 表示"这次穿越只是顺手去看一眼，
+       *  不要动呼机的选中"。胶囊的会话列表就是这么用的。
+       *  ——因为胶囊是"浮在别的页面上面的一条"，从它点出去多半是"去那边看一眼"，
+       *  回来时不该发现呼机的页已经翻掉了。
+       */
+      const jumpTo = (id, pin) => {
         if (!id || !jump) return;
+        if (pin) pinnedRef.current = true;
         recordJump(id);
         // 标已读（2026-11-12 用户："就像一条未读消息"）：
         // 穿越过去 = 看过了。把该会话此刻的 lastAt 记成水位，蓝点立刻消。
@@ -1892,7 +1905,8 @@ window.__ModuleLoader__.load({
       // sessions, and disappears when the last reference is released.
       React.useEffect(() => {
         const sync = () => {
-          if (pickedRef.current) return; // an explicit pick outranks the main view
+          // 「按在选中的那一页」（2026-11-17）：胶囊穿越过 → 这里不动。
+          if (pickedRef.current || pinnedRef.current) return; // an explicit pick outranks the main view
           const row = findActive(sessions);
           setActiveId(row ? row.id : null);
           setActiveTitle(titleOf(row));
@@ -2011,6 +2025,7 @@ window.__ModuleLoader__.load({
 
       const pick = (row) => {
         pickedRef.current = row.id;
+        pinnedRef.current = false; // 明确选了一个 → 选中跟着它走
         setActiveId(row.id);
         setActiveTitle(row.title);
         setPicking(false);
@@ -2018,6 +2033,7 @@ window.__ModuleLoader__.load({
 
       const follow = () => {
         pickedRef.current = null;
+        pinnedRef.current = false;
         const row = findActive(sessions);
         setActiveId(row ? row.id : null);
         setActiveTitle(titleOf(row));
@@ -2970,7 +2986,9 @@ window.__ModuleLoader__.load({
                               onClick: (event) => {
                                 event.stopPropagation();
                                 setPillListOpen(false);
-                                jumpTo(row.id);
+                                // 2026-11-17 用户："胶囊-穿越 的选中显示不随穿越会话走，
+                                // 而是随呼机的会话选中走。" → 传 true = 钉住呼机的选中。
+                                jumpTo(row.id, true);
                               },
                             },
                             // 2026-11-13 用户：「要不要把它俩界面同步？或者至少给前者丰富一些。」

@@ -867,12 +867,22 @@ window.__ModuleLoader__.load({
      * 状态点（照抄调度总台的口径，数据来自 `notify` 投影，用户 2026-11-03）：
      * `pending` 非空 → 待授权；正在跑或 `open` 存在 → 运行中；有 `last` → 已完成；否则未动。
      */
-    function statusOf(row, seen) {
+    function statusOf(row, seen, isActive) {
       const notify = projectionVal(row, 'notify');
       const pending = notify && Array.isArray(notify.pending) ? notify.pending : [];
       if (pending.length > 0) return 'wait';
       if (row && row.running) return 'run';
       if (notify && notify.open) return 'run';
+      // 「当前会话」永远不算未读（2026-11-17 用户："当我们保持在当前会话界面时，
+      // 当前会话在运行完成后也会显示蓝点，需要点击才会消失。"）
+      //
+      // 为什么不是"补一个 effect 去标水位"：那个标已读的 effect 依赖只有 [activeId]，
+      // 而待在一个会话里时 activeId 不变、lastAt 却在变 —— 所以它天然赶不上。
+      // 但**语义上根本不需要**：人就在看着它，哪来的未读。
+      // → 排除比记录简单，也不写存储。
+      //
+      // ⚠ 顺序要紧：wait / run 在它前面，所以"当前会话正在跑"仍然显示绿点。
+      if (isActive) return 'idle';
       // 「未读」判据（2026-11-12 用户："就像一条未读消息"）：
       //   ⚠ 必须有"上次看它的水位"作为基准 —— 没有基准就没有"未读"。
       //   2026-11-12 第一版把"没有水位"当成 0，结果 lastAt > 0 恒成立，
@@ -914,7 +924,7 @@ window.__ModuleLoader__.load({
         .map((row) => ({
           id: row.id,
           title: titleOf(row),
-          status: statusOf(row, seen),
+          status: statusOf(row, seen, Boolean(activeId) && row.id === activeId),
           pinned: pinned.has(row.id),
           // 四层权重，显式排序（用户 2026-11-04 定：按频率优先）：
           //   ① 优先级 = 手动置顶（人的决定，永远最上）
